@@ -92,6 +92,10 @@ export class GeminiLiveClient {
 
       this.websocket.onclose = (event) => {
         console.log("WebSocket connection closed:", event.code, event.reason);
+        if (event.code !== 1000) {
+          console.error("WebSocket closed with error code:", event.code, "reason:", event.reason);
+          this.onError?.(`WebSocket closed with code ${event.code}: ${event.reason || 'Connection failed'}`);
+        }
         this.setConnectionState("disconnected");
         this.websocket = null;
       };
