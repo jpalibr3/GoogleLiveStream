@@ -48,7 +48,7 @@ export function AudioVisualizer({ inputAnalyzer, outputAnalyzer, isActive }: Aud
 
   return (
     <div className="absolute bottom-32 left-1/2 transform -translate-x-1/2 z-10">
-      <div className="glass-morphism rounded-2xl p-4">
+      <div className="glass-morphism rounded-2xl p-4 mt-[50px] mb-[50px]">
         <div className="flex items-center gap-4">
           {/* Input Audio Bars */}
           <div className="flex items-end gap-1 h-12">
