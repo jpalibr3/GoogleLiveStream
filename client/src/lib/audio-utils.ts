@@ -32,24 +32,37 @@ export async function decodeAudioData(
   const uint8Data = decode(data);
   console.log('🔍 Raw bytes length:', uint8Data.length);
   
+  // Check if byte length is perfectly divisible for 16-bit samples
+  const expectedSamples = Math.floor(uint8Data.length / 2 / numChannels);
+  const actualByteLength = expectedSamples * 2 * numChannels;
+  console.log('🔍 Expected samples:', expectedSamples, 'Actual byte usage:', actualByteLength, 'vs total:', uint8Data.length);
+  
   const buffer = ctx.createBuffer(
     numChannels,
-    Math.floor(uint8Data.length / 2 / numChannels),
+    expectedSamples,
     sampleRate,
   );
 
   const dataInt16 = new Int16Array(uint8Data.buffer);
   const l = dataInt16.length;
-  console.log('🔍 Int16 samples:', l, 'First few:', Array.from(dataInt16.slice(0, 10)));
+  console.log('🔍 Int16 samples count:', l);
+  console.log('🔍 First 5 raw bytes:', Array.from(uint8Data.slice(0, 10)));
+  console.log('🔍 Last 5 raw bytes:', Array.from(uint8Data.slice(-10)));
+  console.log('🔍 First 5 Int16:', Array.from(dataInt16.slice(0, 5)));
+  console.log('🔍 Last 5 Int16:', Array.from(dataInt16.slice(-5)));
   
   const dataFloat32 = new Float32Array(l);
+  let clippedSamples = 0;
   for (let i = 0; i < l; i++) {
     // Normalize 16-bit signed PCM to [-1, 1] range
     const sample = dataInt16[i] / 32768.0;
-    dataFloat32[i] = Number.isFinite(sample) ? sample : 0;
+    if (Math.abs(sample) > 1.0) clippedSamples++;
+    dataFloat32[i] = Number.isFinite(sample) ? Math.max(-1, Math.min(1, sample)) : 0;
   }
   
-  console.log('🔍 Float32 samples first few:', Array.from(dataFloat32.slice(0, 10)));
+  console.log('🔍 First 5 Float32:', Array.from(dataFloat32.slice(0, 5)));
+  console.log('🔍 Last 5 Float32:', Array.from(dataFloat32.slice(-5)));
+  console.log('🔍 Clipped samples:', clippedSamples, 'out of', l);
   
   // Extract interleaved channels
   if (numChannels === 1) {
