@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
-import { GoogleGenAI, Live } from "@google/genai";
+import { GoogleGenAI, LiveServerMessage, MediaResolution, Modality, Session } from "@google/genai";
 import { storage } from "./storage";
 
 interface GeminiLiveMessage {
@@ -67,45 +67,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
   wss.on('connection', (ws: WebSocket) => {
     console.log('Client connected to WebSocket');
     
-    let liveSession: any = null;
+    let liveSession: Session | null = null;
+  const responseQueue: LiveServerMessage[] = [];
 
-  // Response listener function like Python's receive_audio
-  async function startResponseListener(session: any, ws: WebSocket) {
-    try {
-      console.log('🎧 Starting response listener...');
-      
-      while (true) {
-        const turn = session.receive();
-        for await (const response of turn) {
-          console.log('🔔 Response received:', JSON.stringify(response, null, 2));
-          
-          if (response.data) {
-            console.log('🔊 Audio data received from Gemini');
-            ws.send(JSON.stringify({
-              type: 'audio',
-              data: response.data
-            }));
-          }
-          
-          if (response.text) {
-            console.log('💬 Text received from Gemini:', response.text);
-            ws.send(JSON.stringify({
-              type: 'text',
-              text: response.text
-            }));
-          }
-        }
-        
-        // Handle turn completion and interruptions like Python example
-        console.log('🔄 Turn completed, ready for next interaction');
+  // Handle responses like TypeScript example
+  function handleModelTurn(message: LiveServerMessage, ws: WebSocket) {
+    if (message.serverContent?.modelTurn?.parts) {
+      const part = message.serverContent.modelTurn.parts[0];
+
+      if (part.inlineData) {
+        console.log('🔊 Audio data received from Gemini');
+        ws.send(JSON.stringify({
+          type: 'audio',
+          data: part.inlineData.data,
+          mimeType: part.inlineData.mimeType
+        }));
       }
-    } catch (error) {
-      console.error('❌ Response listener error:', error);
-      ws.send(JSON.stringify({
-        type: 'error',
-        error: 'Response listener failed'
-      }));
+
+      if (part.text) {
+        console.log('💬 Text received from Gemini:', part.text);
+        ws.send(JSON.stringify({
+          type: 'text',
+          text: part.text
+        }));
+      }
     }
+  }
+
+  async function waitMessage(ws: WebSocket): Promise<LiveServerMessage> {
+    let done = false;
+    let message: LiveServerMessage | undefined = undefined;
+    while (!done) {
+      message = responseQueue.shift();
+      if (message) {
+        handleModelTurn(message, ws);
+        done = true;
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    }
+    return message!;
+  }
+
+  async function handleTurn(ws: WebSocket): Promise<LiveServerMessage[]> {
+    const turn: LiveServerMessage[] = [];
+    let done = false;
+    while (!done) {
+      const message = await waitMessage(ws);
+      turn.push(message);
+      if (message.serverContent && message.serverContent.turnComplete) {
+        done = true;
+      }
+    }
+    return turn;
   }
     let genAI: GoogleGenAI | null = null;
 
@@ -137,31 +151,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
               const modelName = "models/gemini-2.5-flash-preview-native-audio-dialog";
               console.log('Using model:', modelName);
               
-              // Match exact config from working Python example
+              // Use proper TypeScript config format like the example
               const config = {
-                response_modalities: ["AUDIO"],
-                media_resolution: "MEDIA_RESOLUTION_MEDIUM", 
-                speech_config: {
-                  voice_config: {
-                    prebuilt_voice_config: {
-                      voice_name: "Zephyr"  // Same as Python example
+                responseModalities: [Modality.AUDIO],
+                mediaResolution: MediaResolution.MEDIA_RESOLUTION_MEDIUM,
+                speechConfig: {
+                  voiceConfig: {
+                    prebuiltVoiceConfig: {
+                      voiceName: 'Zephyr',
                     }
                   }
                 }
               };
 
-              console.log('Attempting to connect to Gemini Live API...');
+              console.log('🚀 Connecting using TypeScript callback pattern...');
               
-              // Use direct Live API connection like Python example
+              // Use callback-based connection like TypeScript example
               liveSession = await genAI.live.connect({
                 model: modelName,
-                config: config
+                callbacks: {
+                  onopen: function () {
+                    console.log('✅ Live API connection opened');
+                  },
+                  onmessage: function (message: LiveServerMessage) {
+                    console.log('🔔 Message received, adding to queue');
+                    responseQueue.push(message);
+                  },
+                  onerror: function (e: ErrorEvent) {
+                    console.error('❌ Live API error:', e.message);
+                    ws.send(JSON.stringify({
+                      type: 'error',
+                      error: e.message
+                    }));
+                  },
+                  onclose: function (e: CloseEvent) {
+                    console.log('🔌 Live API connection closed:', e.reason);
+                  },
+                },
+                config
               });
               
-              console.log('✅ Connected to Gemini Live API using Python pattern');
+              console.log('✅ Connected to Gemini Live API using TypeScript pattern');
               
-              // Start response listening like Python's receive_audio function
-              startResponseListener(liveSession, ws);
+              // Start processing responses
+              handleTurn(ws);
               
               // Notify client of successful connection
               ws.send(JSON.stringify({
@@ -201,12 +234,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 console.log('📤 Converted audio data, length:', typeof audioData === 'string' ? audioData.length : 'not string');
                 console.log('📤 Audio data sample:', typeof audioData === 'string' ? audioData.substring(0, 100) : 'Array data');
                 
-                // Send audio data like Python example
-                await liveSession.send({
-                  input: {
+                // Send audio using TypeScript pattern
+                await liveSession.sendRealtimeInput({
+                  mediaChunks: [{
                     data: audioData,
-                    mime_type: "audio/pcm" // Match Python format exactly
-                  }
+                    mimeType: "audio/pcm"
+                  }]
                 });
                 
                 console.log('✅ Audio data sent successfully to Live API');
@@ -225,15 +258,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           case 'text':
             if (liveSession) {
               try {
-                console.log('🔚 Sending turn completion like Python example');
+                console.log('🔚 Sending turn completion using TypeScript pattern');
                 
-                // Send turn completion like Python: await self.session.send(input=text or ".", end_of_turn=True)
-                await liveSession.send({
-                  input: ".", // Minimal input like Python example
-                  end_of_turn: true // Python pattern for turn completion
+                // Send turn completion using TypeScript sendClientContent method
+                liveSession.sendClientContent({
+                  turns: [
+                    "Please respond with voice" // Simple prompt to trigger response
+                  ]
                 });
                 
-                console.log('✅ Turn completion sent successfully (Python pattern)');
+                console.log('✅ Turn completion sent successfully (TypeScript pattern)');
               } catch (error) {
                 console.error('Error sending text to Live API:', error);
                 ws.send(JSON.stringify({
