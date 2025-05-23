@@ -141,28 +141,27 @@ export default function LiveAudio() {
       inputAnalyzerRef.current = new AudioAnalyzer(audioContext);
       source.connect(inputAnalyzerRef.current.analyser);
 
+      // Set recording state first
+      setIsRecording(true);
+      
       // Connect to Gemini Live
       await geminiClientRef.current?.connect();
       
       // Start sending audio data
       const processor = audioContext.createScriptProcessor(4096, 1, 1);
       processor.onaudioprocess = (event) => {
-        console.log('🎤 Audio process callback triggered, isRecording:', isRecording);
-        console.log('🎤 Gemini client connected:', geminiClientRef.current?.isConnected());
-        
-        if (isRecording && geminiClientRef.current) {
+        // Only check if client is connected, not isRecording state (which may be stale)
+        if (geminiClientRef.current?.isConnected()) {
           const inputData = event.inputBuffer.getChannelData(0);
           console.log('🎤 Sending audio data from processor, length:', inputData.length);
           geminiClientRef.current.sendAudio(inputData);
         } else {
-          console.log('⚠️ Not sending audio - isRecording:', isRecording, 'client exists:', !!geminiClientRef.current);
+          console.log('⚠️ Not sending audio - client not connected');
         }
       };
       
       source.connect(processor);
       processor.connect(audioContext.destination);
-
-      setIsRecording(true);
       setStatusMessage("🔴 Recording... Capturing audio data.");
       setError(null);
 
