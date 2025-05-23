@@ -53,6 +53,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ apiKey });
   });
 
+  // Test endpoint to verify API key works with basic Gemini API
+  app.get('/api/test-gemini', async (req, res) => {
+    try {
+      const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+      if (!apiKey) {
+        return res.status(500).json({ error: 'API key not configured' });
+      }
+
+      console.log('Testing API key with basic Gemini API...');
+      const genAI = new GoogleGenAI({ apiKey });
+      const response = await genAI.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: "Explain how AI works in a few words"
+      });
+
+      console.log('✅ API key test successful! Response:', response.text);
+      res.json({ 
+        success: true, 
+        text: response.text,
+        message: "API key works with basic Gemini API!" 
+      });
+
+    } catch (error) {
+      console.error('Gemini API test error:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error.message || 'Failed to connect to Gemini API',
+        details: error
+      });
+    }
+  });
+
   // Create WebSocket server on /ws path to avoid conflicts with Vite HMR
   const wss = new WebSocketServer({ 
     server: httpServer, 
