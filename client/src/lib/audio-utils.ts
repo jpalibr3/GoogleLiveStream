@@ -30,7 +30,7 @@ export async function decodeAudioData(
   const uint8Data = decode(data);
   const buffer = ctx.createBuffer(
     numChannels,
-    uint8Data.length / 2 / numChannels,
+    Math.floor(uint8Data.length / 2 / numChannels),
     sampleRate,
   );
 
@@ -38,7 +38,9 @@ export async function decodeAudioData(
   const l = dataInt16.length;
   const dataFloat32 = new Float32Array(l);
   for (let i = 0; i < l; i++) {
-    dataFloat32[i] = dataInt16[i] / 32768.0;
+    // Ensure value is finite
+    const sample = dataInt16[i] / 32768.0;
+    dataFloat32[i] = Number.isFinite(sample) ? sample : 0;
   }
   
   // Extract interleaved channels

@@ -234,12 +234,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 // Convert array to base64 for Live API
                 let audioData: string;
                 if (Array.isArray(message.data)) {
-                  // Convert Float32Array back to base64
+                  // Convert Float32Array back to base64, ensuring finite values
                   const float32Array = new Float32Array(message.data);
                   const buffer = new ArrayBuffer(float32Array.length * 4);
                   const view = new DataView(buffer);
                   for (let i = 0; i < float32Array.length; i++) {
-                    view.setFloat32(i * 4, float32Array[i], true);
+                    const value = Number.isFinite(float32Array[i]) ? float32Array[i] : 0;
+                    view.setFloat32(i * 4, value, true);
                   }
                   audioData = Buffer.from(buffer).toString('base64');
                 } else {
