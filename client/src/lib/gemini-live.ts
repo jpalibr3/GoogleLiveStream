@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Live } from "@google/genai";
 import { createAudioBlob, decodeAudioData } from "./audio-utils";
 
 export type ConnectionState = "disconnected" | "connecting" | "connected" | "error";
@@ -13,6 +13,7 @@ export interface GeminiLiveConfig {
 
 export class GeminiLiveClient {
   private genAI: GoogleGenAI | null = null;
+  private live: Live | null = null;
   private session: any = null;
   private connectionState: ConnectionState = "disconnected";
   private outputAudioContext: AudioContext | null = null;
@@ -56,23 +57,33 @@ export class GeminiLiveClient {
       // Initialize Google GenAI client
       this.genAI = new GoogleGenAI(apiKey);
 
-      // Create Live session configuration
-      const liveConfig = {
-        responseModalities: ["AUDIO"],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: {
-              voiceName: "Zephyr"
+      // Create Live instance using the client's components
+      this.live = new Live(
+        this.genAI.live.apiClient,
+        this.genAI.live.auth,
+        this.genAI.live.webSocketFactory
+      );
+
+      // Create Live session configuration with model and config
+      const modelName = config?.model || "models/gemini-2.5-flash-preview-native-audio-dialog";
+      const params = {
+        model: modelName,
+        config: {
+          responseModalities: ["AUDIO"],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: {
+                voiceName: "Zephyr"
+              }
             }
-          }
-        },
-        mediaResolution: "MEDIA_RESOLUTION_MEDIUM",
-        ...config?.generationConfig
+          },
+          mediaResolution: "MEDIA_RESOLUTION_MEDIUM",
+          ...config?.generationConfig
+        }
       };
 
       // Connect to Live API
-      const modelName = config?.model || "models/gemini-2.5-flash-preview-native-audio-dialog";
-      this.session = await this.genAI.live.connect(modelName, liveConfig);
+      this.session = await this.live.connect(params);
 
       // Set up audio processing
       this.startAudioProcessing();
