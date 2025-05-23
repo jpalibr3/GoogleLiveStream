@@ -108,36 +108,32 @@ export default function LiveAudio() {
       const sampleRate = parseInt(mimeType.split('rate=')[1]) || 24000;
       console.log('🎵 Detected sample rate:', sampleRate, 'Hz');
       
-      // Create new audio context with correct sample rate for Gemini audio
-      const geminiAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
-        sampleRate: sampleRate
-      });
-      
+      // Use the existing audio context but handle sample rate properly in decoding
       const audioBuffer = await customDecodeAudioData(
         base64AudioData,
-        geminiAudioContext, // Use context with matching sample rate
+        audioContextRef.current, // Use existing context to avoid connection issues
         sampleRate,
         1 // Assuming mono audio from Gemini
       );
       
-      const source = geminiAudioContext.createBufferSource();
+      const source = audioContextRef.current.createBufferSource();
       source.buffer = audioBuffer;
 
-      // Connect to output analyzer if available
-      if (!outputAnalyzerRef.current && geminiAudioContext) {
-        outputAnalyzerRef.current = new AudioAnalyzer(geminiAudioContext);
+      // Connect to output analyzer if available (using same context)
+      if (!outputAnalyzerRef.current && audioContextRef.current) {
+        outputAnalyzerRef.current = new AudioAnalyzer(audioContextRef.current);
       }
 
       if (outputAnalyzerRef.current) {
         source.connect(outputAnalyzerRef.current.analyserNode);
-        outputAnalyzerRef.current.analyserNode.connect(geminiAudioContext.destination);
+        outputAnalyzerRef.current.analyserNode.connect(audioContextRef.current.destination);
       } else {
-        source.connect(geminiAudioContext.destination);
+        source.connect(audioContextRef.current.destination);
       }
       
       // Ensure the audio context is resumed before starting playback
-      if (geminiAudioContext.state === 'suspended') {
-        await geminiAudioContext.resume();
+      if (audioContextRef.current.state === 'suspended') {
+        await audioContextRef.current.resume();
       }
       
       source.start();
