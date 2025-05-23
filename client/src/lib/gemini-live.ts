@@ -1,4 +1,3 @@
-import { GoogleGenAI, Modality } from "@google/genai";
 import { createAudioBlob, decodeAudioData } from "./audio-utils";
 
 export type ConnectionState = "disconnected" | "connecting" | "connected" | "error";
@@ -12,8 +11,7 @@ export interface GeminiLiveConfig {
 }
 
 export class GeminiLiveClient {
-  private client: GoogleGenAI | null = null;
-  private session: any = null;
+  private websocket: WebSocket | null = null;
   private connectionState: ConnectionState = "disconnected";
   private outputAudioContext: AudioContext | null = null;
   private nextStartTime = 0;
@@ -48,41 +46,55 @@ export class GeminiLiveClient {
         throw new Error("API key not available");
       }
 
-      // Initialize Google GenAI client
-      this.client = new GoogleGenAI({
-        apiKey: apiKey,
-      });
+      // Connect directly to Gemini Live API WebSocket
+      const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${apiKey}`;
+      this.websocket = new WebSocket(wsUrl);
 
-      const model = config?.model || 'gemini-2.0-flash-live-001';
-      
-      this.session = await this.client.live.connect({
-        model: model,
-        callbacks: {
-          onopen: () => {
-            console.log('Connected to Gemini Live API');
-            this.setConnectionState("connected");
-          },
-          onmessage: async (message: any) => {
-            await this.handleGeminiMessage(message);
-          },
-          onerror: (error: any) => {
-            console.error('Gemini Live API error:', error);
-            this.setConnectionState("error");
-            this.onError?.(error.message || "Gemini API error");
-          },
-          onclose: (event: any) => {
-            console.log('Gemini Live API connection closed');
-            this.setConnectionState("disconnected");
-          },
-        },
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Orus' } },
-          },
-          ...config?.generationConfig
-        },
-      });
+      this.websocket.onopen = () => {
+        console.log('Connected to Gemini Live API');
+        
+        // Send initial setup configuration
+        const setupMessage = {
+          setup: {
+            model: config?.model || "gemini-2.0-flash-live-001",
+            generationConfig: {
+              responseModalities: ["AUDIO"],
+              speechConfig: {
+                voiceConfig: {
+                  prebuiltVoiceConfig: {
+                    voiceName: "Orus"
+                  }
+                }
+              },
+              ...config?.generationConfig
+            }
+          }
+        };
+
+        this.websocket?.send(JSON.stringify(setupMessage));
+        this.setConnectionState("connected");
+      };
+
+      this.websocket.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          this.handleGeminiMessage(message);
+        } catch (error) {
+          console.error("Error parsing WebSocket message:", error);
+        }
+      };
+
+      this.websocket.onerror = (error) => {
+        console.error("WebSocket error:", error);
+        this.setConnectionState("error");
+        this.onError?.("WebSocket connection error");
+      };
+
+      this.websocket.onclose = (event) => {
+        console.log("WebSocket connection closed:", event.code, event.reason);
+        this.setConnectionState("disconnected");
+        this.websocket = null;
+      };
 
     } catch (error) {
       console.error("Error connecting to Gemini Live:", error);
@@ -92,37 +104,48 @@ export class GeminiLiveClient {
   }
 
   disconnect(): void {
-    if (this.session) {
-      this.session.close();
-      this.session = null;
+    if (this.websocket) {
+      this.websocket.close();
+      this.websocket = null;
     }
     this.setConnectionState("disconnected");
     
     // Stop all audio sources
-    for (const source of this.sources.values()) {
+    this.sources.forEach(source => {
       source.stop();
-      this.sources.delete(source);
-    }
+    });
+    this.sources.clear();
   }
 
   sendAudio(audioData: Float32Array): void {
-    if (!this.isConnected() || !this.session) return;
+    if (!this.isConnected()) return;
 
     const audioBlob = createAudioBlob(audioData);
-    this.session.sendRealtimeInput({ media: audioBlob });
+    const message = {
+      realtimeInput: {
+        audio: audioBlob
+      }
+    };
+    
+    this.websocket?.send(JSON.stringify(message));
   }
 
   sendText(text: string): void {
-    if (!this.isConnected() || !this.session) return;
+    if (!this.isConnected()) return;
 
-    this.session.sendClientContent({
-      turns: [{ role: "user", parts: [{ text: text }] }],
-      turnComplete: true
-    });
+    const message = {
+      clientContent: {
+        turns: [{ role: "user", parts: [{ text: text }] }],
+        turnComplete: true
+      }
+    };
+    
+    this.websocket?.send(JSON.stringify(message));
   }
 
   isConnected(): boolean {
-    return this.connectionState === "connected" && this.session;
+    return this.connectionState === "connected" && 
+           this.websocket?.readyState === WebSocket.OPEN;
   }
 
   private setConnectionState(state: ConnectionState): void {
@@ -132,7 +155,7 @@ export class GeminiLiveClient {
 
   private async handleGeminiMessage(message: any): Promise<void> {
     try {
-      const audio = message.serverContent?.modelTurn?.parts[0]?.inlineData;
+      const audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData;
 
       if (audio && this.outputAudioContext) {
         this.nextStartTime = Math.max(
@@ -166,10 +189,10 @@ export class GeminiLiveClient {
       // Handle interruptions
       const interrupted = message.serverContent?.interrupted;
       if (interrupted) {
-        for (const source of this.sources.values()) {
+        this.sources.forEach(source => {
           source.stop();
-          this.sources.delete(source);
-        }
+        });
+        this.sources.clear();
         this.nextStartTime = 0;
       }
 
