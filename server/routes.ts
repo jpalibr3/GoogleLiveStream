@@ -14,6 +14,15 @@ interface GeminiLiveMessage {
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
 
+  // API endpoint to provide API key to frontend
+  app.get('/api/get-api-key', (req, res) => {
+    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    if (!apiKey) {
+      return res.status(400).json({ error: 'API key not configured' });
+    }
+    res.json({ apiKey });
+  });
+
   // Create WebSocket server on /ws path to avoid conflicts with Vite HMR
   const wss = new WebSocketServer({ 
     server: httpServer, 

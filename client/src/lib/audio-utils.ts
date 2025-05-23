@@ -12,13 +12,48 @@ export function encodeAudioData(audioData: Float32Array): string {
   return btoa(String.fromCharCode(...uint8Array));
 }
 
-export function decodeAudioData(base64Data: string): Uint8Array {
+export function decode(base64Data: string): Uint8Array {
   const binaryString = atob(base64Data);
   const bytes = new Uint8Array(binaryString.length);
   for (let i = 0; i < binaryString.length; i++) {
     bytes[i] = binaryString.charCodeAt(i);
   }
   return bytes;
+}
+
+export async function decodeAudioData(
+  data: string,
+  ctx: AudioContext,
+  sampleRate: number,
+  numChannels: number,
+): Promise<AudioBuffer> {
+  const uint8Data = decode(data);
+  const buffer = ctx.createBuffer(
+    numChannels,
+    uint8Data.length / 2 / numChannels,
+    sampleRate,
+  );
+
+  const dataInt16 = new Int16Array(uint8Data.buffer);
+  const l = dataInt16.length;
+  const dataFloat32 = new Float32Array(l);
+  for (let i = 0; i < l; i++) {
+    dataFloat32[i] = dataInt16[i] / 32768.0;
+  }
+  
+  // Extract interleaved channels
+  if (numChannels === 1) {
+    buffer.copyToChannel(dataFloat32, 0);
+  } else {
+    for (let i = 0; i < numChannels; i++) {
+      const channel = dataFloat32.filter(
+        (_, index) => index % numChannels === i,
+      );
+      buffer.copyToChannel(channel, i);
+    }
+  }
+
+  return buffer;
 }
 
 export function createAudioBlob(audioData: Float32Array): { data: string; mimeType: string } {

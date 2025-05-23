@@ -1,4 +1,5 @@
-import { createAudioBlob } from "./audio-utils";
+import { GoogleGenAI, Modality } from "@google/genai";
+import { createAudioBlob, decodeAudioData } from "./audio-utils";
 
 export type ConnectionState = "disconnected" | "connecting" | "connected" | "error";
 
@@ -11,9 +12,12 @@ export interface GeminiLiveConfig {
 }
 
 export class GeminiLiveClient {
-  private websocket: WebSocket | null = null;
+  private client: GoogleGenAI | null = null;
+  private session: any = null;
   private connectionState: ConnectionState = "disconnected";
-  private apiKey: string;
+  private outputAudioContext: AudioContext | null = null;
+  private nextStartTime = 0;
+  private sources = new Set<AudioBufferSourceNode>();
   
   // Event handlers
   public onConnectionStateChange?: (state: ConnectionState) => void;
@@ -22,8 +26,10 @@ export class GeminiLiveClient {
   public onError?: (error: string) => void;
 
   constructor() {
-    // API key will be handled by the backend server
-    this.apiKey = "";
+    this.outputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
+      sampleRate: 24000
+    });
+    this.nextStartTime = this.outputAudioContext.currentTime;
   }
 
   async connect(config?: GeminiLiveConfig): Promise<void> {
@@ -34,59 +40,49 @@ export class GeminiLiveClient {
     this.setConnectionState("connecting");
 
     try {
-      // Connect via our backend WebSocket proxy
-      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const wsUrl = `${protocol}//${window.location.host}/ws`;
+      // Get API key from backend
+      const response = await fetch('/api/get-api-key');
+      const { apiKey } = await response.json();
       
-      this.websocket = new WebSocket(wsUrl);
+      if (!apiKey) {
+        throw new Error("API key not available");
+      }
 
-      this.websocket.onopen = () => {
-        console.log("Connected to WebSocket proxy");
-        
-        // Send initial configuration
-        const setupMessage = {
-          setup: {
-            model: config?.model || "gemini-2.0-flash-live-001",
-            generationConfig: {
-              responseModalities: ["AUDIO"],
-              speechConfig: {
-                voiceConfig: {
-                  prebuiltVoiceConfig: {
-                    voiceName: "Puck"
-                  }
-                }
-              },
-              ...config?.generationConfig
-            }
-          }
-        };
+      // Initialize Google GenAI client
+      this.client = new GoogleGenAI({
+        apiKey: apiKey,
+      });
 
-        this.websocket?.send(JSON.stringify({
-          type: "setup",
-          config: setupMessage
-        }));
-      };
-
-      this.websocket.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data);
-          this.handleMessage(message);
-        } catch (error) {
-          console.error("Error parsing WebSocket message:", error);
-        }
-      };
-
-      this.websocket.onerror = (error) => {
-        console.error("WebSocket error:", error);
-        this.setConnectionState("error");
-        this.onError?.("WebSocket connection error");
-      };
-
-      this.websocket.onclose = () => {
-        console.log("WebSocket connection closed");
-        this.setConnectionState("disconnected");
-        this.websocket = null;
-      };
+      const model = config?.model || 'gemini-2.0-flash-live-001';
+      
+      this.session = await this.client.live.connect({
+        model: model,
+        callbacks: {
+          onopen: () => {
+            console.log('Connected to Gemini Live API');
+            this.setConnectionState("connected");
+          },
+          onmessage: async (message: any) => {
+            await this.handleGeminiMessage(message);
+          },
+          onerror: (error: any) => {
+            console.error('Gemini Live API error:', error);
+            this.setConnectionState("error");
+            this.onError?.(error.message || "Gemini API error");
+          },
+          onclose: (event: any) => {
+            console.log('Gemini Live API connection closed');
+            this.setConnectionState("disconnected");
+          },
+        },
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Orus' } },
+          },
+          ...config?.generationConfig
+        },
+      });
 
     } catch (error) {
       console.error("Error connecting to Gemini Live:", error);
@@ -96,39 +92,37 @@ export class GeminiLiveClient {
   }
 
   disconnect(): void {
-    if (this.websocket) {
-      this.websocket.close();
-      this.websocket = null;
+    if (this.session) {
+      this.session.close();
+      this.session = null;
     }
     this.setConnectionState("disconnected");
+    
+    // Stop all audio sources
+    for (const source of this.sources.values()) {
+      source.stop();
+      this.sources.delete(source);
+    }
   }
 
   sendAudio(audioData: Float32Array): void {
-    if (!this.isConnected()) return;
+    if (!this.isConnected() || !this.session) return;
 
     const audioBlob = createAudioBlob(audioData);
-    const message = {
-      type: "audio",
-      data: audioBlob
-    };
-
-    this.websocket?.send(JSON.stringify(message));
+    this.session.sendRealtimeInput({ media: audioBlob });
   }
 
   sendText(text: string): void {
-    if (!this.isConnected()) return;
+    if (!this.isConnected() || !this.session) return;
 
-    const message = {
-      type: "text",
-      text: text
-    };
-
-    this.websocket?.send(JSON.stringify(message));
+    this.session.sendClientContent({
+      turns: [{ role: "user", parts: [{ text: text }] }],
+      turnComplete: true
+    });
   }
 
   isConnected(): boolean {
-    return this.connectionState === "connected" && 
-           this.websocket?.readyState === WebSocket.OPEN;
+    return this.connectionState === "connected" && this.session;
   }
 
   private setConnectionState(state: ConnectionState): void {
@@ -136,38 +130,59 @@ export class GeminiLiveClient {
     this.onConnectionStateChange?.(state);
   }
 
-  private handleMessage(message: any): void {
-    switch (message.type) {
-      case "connected":
-        this.setConnectionState("connected");
-        break;
+  private async handleGeminiMessage(message: any): Promise<void> {
+    try {
+      const audio = message.serverContent?.modelTurn?.parts[0]?.inlineData;
+
+      if (audio && this.outputAudioContext) {
+        this.nextStartTime = Math.max(
+          this.nextStartTime,
+          this.outputAudioContext.currentTime,
+        );
+
+        const audioBuffer = await decodeAudioData(
+          audio.data,
+          this.outputAudioContext,
+          24000,
+          1,
+        );
         
-      case "audio":
-        if (message.data) {
-          // Decode base64 audio data
-          const audioData = new Uint8Array(
-            atob(message.data)
-              .split("")
-              .map(char => char.charCodeAt(0))
-          );
-          this.onAudioReceived?.(audioData);
+        const source = this.outputAudioContext.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(this.outputAudioContext.destination);
+        
+        source.addEventListener('ended', () => {
+          this.sources.delete(source);
+        });
+
+        source.start(this.nextStartTime);
+        this.nextStartTime = this.nextStartTime + audioBuffer.duration;
+        this.sources.add(source);
+        
+        // Notify audio received
+        this.onAudioReceived?.(new Uint8Array(audioBuffer.getChannelData(0).buffer));
+      }
+
+      // Handle interruptions
+      const interrupted = message.serverContent?.interrupted;
+      if (interrupted) {
+        for (const source of this.sources.values()) {
+          source.stop();
+          this.sources.delete(source);
         }
-        break;
-        
-      case "text":
-        if (message.text) {
-          this.onTextReceived?.(message.text);
+        this.nextStartTime = 0;
+      }
+
+      // Handle text responses
+      if (message.serverContent?.modelTurn?.parts) {
+        for (const part of message.serverContent.modelTurn.parts) {
+          if (part.text) {
+            this.onTextReceived?.(part.text);
+          }
         }
-        break;
-        
-      case "error":
-        console.error("Gemini Live API error:", message.error);
-        this.setConnectionState("error");
-        this.onError?.(message.error || "Unknown API error");
-        break;
-        
-      default:
-        console.log("Unknown message type:", message.type);
+      }
+    } catch (error) {
+      console.error("Error processing Gemini message:", error);
     }
   }
 }
