@@ -94,15 +94,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 console.error('Gemini WebSocket error:', error);
                 ws.send(JSON.stringify({
                   type: 'error',
-                  error: 'Gemini API connection error'
+                  error: `Gemini API connection error: ${error.message || error}`
                 }));
               });
 
-              geminiWs.on('close', () => {
-                console.log('Gemini WebSocket closed');
+              geminiWs.on('close', (code, reason) => {
+                console.log('Gemini WebSocket closed with code:', code, 'reason:', reason.toString());
                 ws.send(JSON.stringify({
                   type: 'error',
-                  error: 'Gemini API connection closed'
+                  error: `Gemini API connection closed (code: ${code}) - ${reason.toString() || 'Please check API key permissions for Gemini Live API'}`
                 }));
               });
 
