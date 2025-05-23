@@ -332,9 +332,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           case 'endTurn':
             if (liveSession) {
               try {
-                console.log('🔚 Signaling end of turn to Live API with proper structure');
+                console.log('🔚 First signaling audio stream end to Live API');
                 
-                // Signal end of turn using correct API structure with required turns array
+                // First, explicitly signal that the audio stream has ended
+                await liveSession.sendRealtimeInput({ audioStreamEnd: true });
+                console.log('✅ Audio stream end signal sent successfully');
+                
+                console.log('🔚 Now signaling turn completion to Live API');
+                
+                // Then signal turn completion
                 await liveSession.sendClientContent({
                   turns: [
                     {
@@ -345,7 +351,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   turnComplete: true
                 });
                 
-                console.log('✅ End of turn signal sent successfully with proper structure');
+                console.log('✅ Turn completion signal sent successfully');
               } catch (error) {
                 console.error('Error sending end of turn to Live API:', error);
                 ws.send(JSON.stringify({

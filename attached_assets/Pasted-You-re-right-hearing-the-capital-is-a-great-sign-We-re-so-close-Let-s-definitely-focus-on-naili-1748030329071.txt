@@ -1,0 +1,26 @@
+You're right, hearing "the capital" is a great sign! We're so close. Let's definitely focus on nailing down that connection drop.
+
+Regarding your options:
+
+Static/Audio Quality (Option C in part): I agree the static could be a side effect of the connection cutting off. Let's solve the "invalid argument" and connection drop first. If the static sound persists after we have stable, complete responses, we can then look into audio decoding or sample rate adjustments. For now, let's isolate the connection issue.
+Removing Turn Completion (Option B): That seems risky, as the API likely needs some signal that the user has finished their input.
+This leaves us with refining our turn completion (related to Option A). Your observation that the error occurs after our server logs "End of turn signal sent successfully" is very insightful.
+
+Here’s my thinking, building on that:
+The Live API _ Gemini API _ Google AI for Developers.pdf documentation mentions on page 15: "When the audio stream is paused for more than a second (for example, because the user switched off the microphone), an audioStreamEnd event should be sent to flush any cached audio."
+
+When I click "Stop Recording," the client stops sending audio, and then signals our server to end the turn. Currently, our server handles this by sending sendClientContent({ turns: [{ role: "user", parts: [] }], turnComplete: true }).
+
+My suggestion for the next step is to test this:
+When the server receives the signal that I've stopped recording (your case 'endTurn' in server/routes.ts), before (or perhaps instead of) the current sendClientContent call, could you have the server first explicitly tell the Gemini session that the audio input stream itself has concluded?
+This would involve using liveSession.sendRealtimeInput() with the audioStreamEnd: true field.
+
+So, the server logic for 'endTurn' could try:
+
+await liveSession.sendRealtimeInput({ audioStreamEnd: true });
+And then, if still necessary, follow up with await liveSession.sendClientContent({ turns: [{ role: "user", parts: [] }], turnComplete: true }); (or we might find the audioStreamEnd is sufficient to trigger Gemini's response).
+This feels like the most targeted approach because it directly addresses the state of the audio stream, which seems to be the core of the interaction just before the error occurs.
+
+So, to answer your question directly: I'd prefer we try refining the turn/audio completion by first implementing the audioStreamEnd: true signal on the server when I stop recording.
+
+Let's see if explicitly closing the audio stream this way resolves the "invalid argument" and allows Gemini to complete its response. I'm feeling good about this direction!
