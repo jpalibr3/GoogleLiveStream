@@ -53,7 +53,7 @@ export class GeminiLiveClient {
         apiKey: apiKey,
       });
 
-      const model = config?.model || 'gemini-2.5-flash-preview-native-audio-dialog';
+      const model = config?.model || 'gemini-2.0-flash-live-001';
       
       this.session = await this.client.live.connect({
         model: model,
