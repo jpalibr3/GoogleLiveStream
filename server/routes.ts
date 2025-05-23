@@ -99,7 +99,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               console.log('Using model:', modelName);
               
               const config = {
-                responseModalities: ["AUDIO"],
+                response_modalities: ["AUDIO"],
                 speechConfig: {
                   voiceConfig: {
                     prebuiltVoiceConfig: {
@@ -213,10 +213,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 console.log('📤 Converted audio data, length:', typeof audioData === 'string' ? audioData.length : 'not string');
                 console.log('📤 Audio data sample:', typeof audioData === 'string' ? audioData.substring(0, 100) : 'Array data');
                 
-                // Use sendRealtimeInput for audio data
+                // Use sendRealtimeInput for audio data with correct MIME type
                 await liveSession.sendRealtimeInput({
                   mediaChunks: [{
-                    mimeType: 'audio/pcm',
+                    mimeType: 'audio/pcm;rate=16000',
                     data: audioData
                   }]
                 });
