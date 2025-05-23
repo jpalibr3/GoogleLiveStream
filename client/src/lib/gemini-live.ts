@@ -46,7 +46,7 @@ export class GeminiLiveClient {
         throw new Error("API key not available");
       }
 
-      // Connect directly to Gemini Live API WebSocket
+      // Connect directly to Gemini Live API WebSocket with v1beta
       const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${apiKey}`;
       this.websocket = new WebSocket(wsUrl);
 
@@ -56,16 +56,17 @@ export class GeminiLiveClient {
         // Send initial setup configuration
         const setupMessage = {
           setup: {
-            model: config?.model || "gemini-2.0-flash-live-001",
+            model: config?.model || "models/gemini-2.0-flash-live-001",
             generationConfig: {
               responseModalities: ["AUDIO"],
               speechConfig: {
                 voiceConfig: {
                   prebuiltVoiceConfig: {
-                    voiceName: "Orus"
+                    voiceName: "Zephyr"
                   }
                 }
               },
+              mediaResolution: "MEDIA_RESOLUTION_MEDIUM",
               ...config?.generationConfig
             }
           }
