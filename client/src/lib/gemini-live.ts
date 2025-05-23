@@ -62,7 +62,7 @@ export class GeminiLiveClient {
           type: 'setup',
           apiKey: apiKey,
           config: {
-            model: config?.model || "models/gemini-2.5-flash-preview-native-audio-dialog",
+            model: config?.model || "models/gemini-2.0-flash-live-001",
             generationConfig: config?.generationConfig
           }
         };

@@ -149,7 +149,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               console.log('🚀 Connecting using proven Python pattern...');
               genAI = new GoogleGenAI({ apiKey });
               
-              const modelName = "models/gemini-2.5-flash-preview-native-audio-dialog";
+              const modelName = "models/gemini-2.0-flash-live-001";
               console.log('Using model:', modelName);
               
               // Use proper TypeScript config format like the example
