@@ -95,27 +95,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
               console.log('Initializing GenAI with provided API key...');
               genAI = new GoogleGenAI({ apiKey });
               
-              const modelName = message.config?.model || "gemini-2.5-flash-preview-native-audio-dialog";
+              const modelName = message.config?.model || "models/gemini-2.0-flash-exp";
               console.log('Using model:', modelName);
               
               const config = {
-                response_modalities: ["AUDIO"],
-                speechConfig: {
-                  voiceConfig: {
-                    prebuiltVoiceConfig: {
-                      voiceName: "Puck"
+                generationConfig: {
+                  responseModalities: ["AUDIO"],
+                  speechConfig: {
+                    voiceConfig: {
+                      prebuiltVoiceConfig: {
+                        voiceName: "Puck"
+                      }
                     }
-                  }
+                  },
+                  candidateCount: 1,
+                  maxOutputTokens: 1000,
+                  temperature: 0.7,
                 },
                 systemInstruction: {
                   parts: [{
                     text: "You are a helpful AI assistant. Please respond with voice to the user's audio input. Keep your responses conversational and engaging."
                   }]
-                },
-                generationConfig: {
-                  candidateCount: 1,
-                  maxOutputTokens: 1000,
-                  temperature: 0.7,
                 },
                 ...message.config?.generationConfig
               };
