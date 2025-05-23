@@ -274,11 +274,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 console.log('📤 Converted audio data, length:', typeof audioData === 'string' ? audioData.length : 'not string');
                 console.log('📤 Audio data sample:', typeof audioData === 'string' ? audioData.substring(0, 100) : 'Array data');
                 
-                // Send audio using the correct Live API method
-                await liveSession.sendRealtimeInput({
-                  mediaChunks: [{
-                    data: audioData,
-                    mimeType: "audio/pcm;rate=16000"
+                // Send audio using correct Live API structure
+                await liveSession.sendClientContent({
+                  turns: [{
+                    parts: [{
+                      inlineData: {
+                        data: audioData,
+                        mimeType: "audio/pcm;rate=16000"
+                      }
+                    }]
                   }]
                 });
                 
@@ -323,9 +327,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
               try {
                 console.log('🔚 Signaling end of turn to Live API');
                 
-                // Signal end of turn using the Live API
-                await liveSession.sendRealtimeInput({
-                  "end_of_turn": true
+                // Signal end of turn using correct API structure
+                await liveSession.sendClientContent({
+                  turnComplete: true
                 });
                 
                 console.log('✅ End of turn signal sent successfully');
