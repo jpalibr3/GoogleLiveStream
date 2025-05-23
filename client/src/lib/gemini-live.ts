@@ -84,6 +84,16 @@ export class GeminiLiveClient {
       this.websocket.onclose = (event) => {
         console.log('WebSocket closed:', event.code, event.reason);
         this.setConnectionState("disconnected");
+        
+        // Auto-reconnect if connection dropped unexpectedly  
+        if (event.code !== 1000 && event.code !== 1001) {
+          console.log('Attempting to reconnect in 2 seconds...');
+          setTimeout(() => {
+            if (this.connectionState === "disconnected") {
+              this.connect(config);
+            }
+          }, 2000);
+        }
       };
 
     } catch (error) {

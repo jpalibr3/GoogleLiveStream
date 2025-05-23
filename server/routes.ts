@@ -192,15 +192,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
           case 'audio':
             if (liveSession && message.data) {
               try {
-                console.log('📤 Sending audio data to Live API, length:', message.data.length);
+                console.log('📤 Received audio data from client, length:', Array.isArray(message.data) ? message.data.length : 'not array');
                 console.log('📤 Audio data type:', typeof message.data);
-                console.log('📤 Audio data sample:', message.data.substring(0, 100));
+                
+                // Convert array back to base64 if needed
+                let audioData = message.data;
+                if (Array.isArray(message.data)) {
+                  // Convert Float32Array back to base64
+                  const float32Array = new Float32Array(message.data);
+                  const buffer = new ArrayBuffer(float32Array.length * 4);
+                  const view = new DataView(buffer);
+                  for (let i = 0; i < float32Array.length; i++) {
+                    view.setFloat32(i * 4, float32Array[i], true);
+                  }
+                  audioData = Buffer.from(buffer).toString('base64');
+                }
+                
+                console.log('📤 Converted audio data, length:', audioData.length);
+                console.log('📤 Audio data sample:', audioData.substring(0, 100));
                 
                 // Use sendRealtimeInput for audio data
                 await liveSession.sendRealtimeInput({
                   mediaChunks: [{
                     mimeType: 'audio/pcm',
-                    data: message.data
+                    data: audioData
                   }]
                 });
                 
