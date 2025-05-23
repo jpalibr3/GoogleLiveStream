@@ -172,6 +172,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 callbacks: {
                   onopen: function () {
                     console.log('✅ Live API connection opened');
+                    ws.send(JSON.stringify({
+                      type: 'connected'
+                    }));
                   },
                   onmessage: function (message: LiveServerMessage) {
                     console.log('🔔 Message received, adding to queue');
@@ -183,9 +186,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
                       type: 'error',
                       error: e.message
                     }));
+                    // Attempt to close and cleanup on error
+                    if (liveSession) {
+                      try {
+                        liveSession.close();
+                      } catch (err) {
+                        console.error('Error closing session:', err);
+                      }
+                    }
                   },
                   onclose: function (e: CloseEvent) {
                     console.log('🔌 Live API connection closed:', e.reason);
+                    ws.send(JSON.stringify({
+                      type: 'error',
+                      error: 'Connection closed: ' + e.reason
+                    }));
                   },
                 },
                 config

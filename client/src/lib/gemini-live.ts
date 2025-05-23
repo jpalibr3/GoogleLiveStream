@@ -87,10 +87,15 @@ export class GeminiLiveClient {
         
         // Auto-reconnect if connection dropped unexpectedly  
         if (event.code !== 1000 && event.code !== 1001) {
+          console.log('Connection dropped, cleaning up...');
+          this.disconnect(); // Ensure clean disconnect
           console.log('Attempting to reconnect in 2 seconds...');
           setTimeout(() => {
             if (this.connectionState === "disconnected") {
-              this.connect(config);
+              this.connect(config).catch(error => {
+                console.error('Reconnection failed:', error);
+                this.onError?.('Failed to reconnect: ' + error.message);
+              });
             }
           }, 2000);
         }
