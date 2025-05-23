@@ -178,15 +178,18 @@ export class GeminiLiveClient {
     }
 
     try {
+      console.log('🎤 GeminiLiveClient sending audio data, length:', audioData.length);
       // Send audio data to server
       const message = {
         type: 'audio',
         data: Array.from(audioData) // Convert Float32Array to regular array for JSON
       };
+      console.log('🎤 Audio data converted to array, length:', message.data.length);
       
       this.websocket.send(JSON.stringify(message));
+      console.log('✅ Audio data sent to WebSocket successfully');
     } catch (error) {
-      console.error('Error sending audio:', error);
+      console.error('❌ Error sending audio:', error);
       this.onError?.(`Failed to send audio: ${error}`);
     }
   }

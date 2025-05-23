@@ -119,24 +119,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 config,
                 callbacks: {
                   onmessage: (message: any) => {
-                    console.log('Live API message received:', message);
+                    console.log('🔔 Live API message received:', JSON.stringify(message, null, 2));
                     
                     // Handle different message types
                     if (message.serverContent?.modelTurn?.parts) {
+                      console.log('📝 Processing model turn with parts:', message.serverContent.modelTurn.parts.length);
                       for (const part of message.serverContent.modelTurn.parts) {
                         if (part.inlineData?.mimeType?.startsWith('audio/')) {
+                          console.log('🔊 Sending audio response to client, mimeType:', part.inlineData.mimeType);
                           ws.send(JSON.stringify({
                             type: 'audio',
                             data: part.inlineData.data,
                             mimeType: part.inlineData.mimeType
                           }));
                         } else if (part.text) {
+                          console.log('💬 Sending text response to client:', part.text);
                           ws.send(JSON.stringify({
                             type: 'text',
                             text: part.text
                           }));
                         }
                       }
+                    } else {
+                      console.log('ℹ️ Message received but no model turn parts found');
                     }
                   },
                   onData: (data: any) => {
@@ -187,6 +192,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           case 'audio':
             if (liveSession && message.data) {
               try {
+                console.log('📤 Sending audio data to Live API, length:', message.data.length);
+                console.log('📤 Audio data type:', typeof message.data);
+                console.log('📤 Audio data sample:', message.data.substring(0, 100));
+                
                 // Use sendRealtimeInput for audio data
                 await liveSession.sendRealtimeInput({
                   mediaChunks: [{
@@ -194,13 +203,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
                     data: message.data
                   }]
                 });
+                
+                console.log('✅ Audio data sent successfully to Live API');
               } catch (error) {
-                console.error('Error sending audio to Live API:', error);
+                console.error('❌ Error sending audio to Live API:', error);
                 ws.send(JSON.stringify({
                   type: 'error',
                   error: `Failed to send audio: ${error}`
                 }));
               }
+            } else {
+              console.log('⚠️ No liveSession or audio data to send');
             }
             break;
 
