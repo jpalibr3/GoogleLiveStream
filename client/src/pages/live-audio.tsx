@@ -216,8 +216,8 @@ export default function LiveAudio() {
       // Set recording state first
       setIsRecording(true);
       
-      // Connect to Gemini Live
-      await geminiClientRef.current?.connect();
+      // Connect to Gemini Live with selected model
+      await geminiClientRef.current?.connect({ model: selectedModel });
       
       // Start sending audio data
       const processor = audioContext.createScriptProcessor(4096, 1, 1);
@@ -284,14 +284,23 @@ export default function LiveAudio() {
   ];
 
   // Handle model change
-  const handleModelChange = useCallback((newModel: string) => {
+  const handleModelChange = useCallback(async (newModel: string) => {
     setSelectedModel(newModel);
     
     // If currently connected, disconnect and reconnect with new model
     if (connectionState === "connected") {
+      console.log(`🔄 Switching from current model to: ${newModel}`);
       geminiClientRef.current?.disconnect();
-      setTimeout(() => {
-        geminiClientRef.current?.connect({ model: newModel });
+      
+      // Wait a moment then reconnect with the new model
+      setTimeout(async () => {
+        try {
+          await geminiClientRef.current?.connect({ model: newModel });
+          console.log(`✅ Successfully switched to model: ${newModel}`);
+        } catch (error) {
+          console.error(`❌ Failed to switch to model ${newModel}:`, error);
+          setError(`Failed to switch to new model: ${error}`);
+        }
       }, 500);
     }
     
@@ -299,7 +308,7 @@ export default function LiveAudio() {
       title: "Model Changed",
       description: `Switched to ${availableModels.find(m => m.value === newModel)?.label}`,
     });
-  }, [connectionState, toast]);
+  }, [connectionState, toast, availableModels]);
 
   return (
     <div className="relative w-screen h-screen overflow-hidden">
