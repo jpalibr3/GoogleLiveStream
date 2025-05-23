@@ -55,11 +55,8 @@ export default function LiveAudio() {
     const source = playbackAudioContextRef.current.createBufferSource();
     source.buffer = buffer;
     
-    // Connect to destination and analyzer
+    // Connect directly to destination only (testing without analyzer for cleaner audio)
     source.connect(playbackAudioContextRef.current.destination);
-    if (outputAnalyzerRef.current) {
-      source.connect(outputAnalyzerRef.current.analyserNode);
-    }
     
     // Calculate start time
     const currentTime = playbackAudioContextRef.current.currentTime;
