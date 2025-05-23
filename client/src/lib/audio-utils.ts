@@ -27,7 +27,11 @@ export async function decodeAudioData(
   sampleRate: number,
   numChannels: number,
 ): Promise<AudioBuffer> {
+  console.log('🔍 Decoding PCM - base64 length:', data.length, 'sampleRate:', sampleRate);
+  
   const uint8Data = decode(data);
+  console.log('🔍 Raw bytes length:', uint8Data.length);
+  
   const buffer = ctx.createBuffer(
     numChannels,
     Math.floor(uint8Data.length / 2 / numChannels),
@@ -36,12 +40,16 @@ export async function decodeAudioData(
 
   const dataInt16 = new Int16Array(uint8Data.buffer);
   const l = dataInt16.length;
+  console.log('🔍 Int16 samples:', l, 'First few:', Array.from(dataInt16.slice(0, 10)));
+  
   const dataFloat32 = new Float32Array(l);
   for (let i = 0; i < l; i++) {
-    // Ensure value is finite
+    // Normalize 16-bit signed PCM to [-1, 1] range
     const sample = dataInt16[i] / 32768.0;
     dataFloat32[i] = Number.isFinite(sample) ? sample : 0;
   }
+  
+  console.log('🔍 Float32 samples first few:', Array.from(dataFloat32.slice(0, 10)));
   
   // Extract interleaved channels
   if (numChannels === 1) {
