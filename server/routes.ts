@@ -68,6 +68,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
     console.log('Client connected to WebSocket');
     
     let liveSession: any = null;
+
+  // Response listener function like Python's receive_audio
+  async function startResponseListener(session: any, ws: WebSocket) {
+    try {
+      console.log('🎧 Starting response listener...');
+      
+      while (true) {
+        const turn = session.receive();
+        for await (const response of turn) {
+          console.log('🔔 Response received:', JSON.stringify(response, null, 2));
+          
+          if (response.data) {
+            console.log('🔊 Audio data received from Gemini');
+            ws.send(JSON.stringify({
+              type: 'audio',
+              data: response.data
+            }));
+          }
+          
+          if (response.text) {
+            console.log('💬 Text received from Gemini:', response.text);
+            ws.send(JSON.stringify({
+              type: 'text',
+              text: response.text
+            }));
+          }
+        }
+        
+        // Handle turn completion and interruptions like Python example
+        console.log('🔄 Turn completed, ready for next interaction');
+      }
+    } catch (error) {
+      console.error('❌ Response listener error:', error);
+      ws.send(JSON.stringify({
+        type: 'error',
+        error: 'Response listener failed'
+      }));
+    }
+  }
     let genAI: GoogleGenAI | null = null;
 
     ws.on('message', async (data: Buffer) => {
@@ -92,103 +131,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 throw new Error('API key is missing or invalid');
               }
 
-              console.log('Initializing GenAI with provided API key...');
+              console.log('🚀 Connecting using proven Python pattern...');
               genAI = new GoogleGenAI({ apiKey });
               
-              const modelName = message.config?.model || "gemini-2.5-flash-preview-native-audio-dialog";
+              const modelName = "models/gemini-2.5-flash-preview-native-audio-dialog";
               console.log('Using model:', modelName);
               
+              // Match exact config from working Python example
               const config = {
-                responseModalities: ["AUDIO"],
-                speechConfig: {
-                  voiceConfig: {
-                    prebuiltVoiceConfig: {
-                      voiceName: "Puck"
+                response_modalities: ["AUDIO"],
+                media_resolution: "MEDIA_RESOLUTION_MEDIUM", 
+                speech_config: {
+                  voice_config: {
+                    prebuilt_voice_config: {
+                      voice_name: "Zephyr"  // Same as Python example
                     }
                   }
-                },
-                systemInstruction: {
-                  parts: [{
-                    text: "You are a helpful AI assistant. Respond naturally with voice to user questions."
-                  }]
                 }
               };
 
               console.log('Attempting to connect to Gemini Live API...');
               
-              // Add required callbacks parameter with onmessage
-              const connectParams = {
+              // Use direct Live API connection like Python example
+              liveSession = await genAI.live.connect({
                 model: modelName,
-                config,
-                callbacks: {
-                  onmessage: (message: any) => {
-                    console.log('🔔 Live API message received:', JSON.stringify(message, null, 2));
-                    
-                    // Handle different message types
-                    if (message.serverContent?.modelTurn?.parts) {
-                      console.log('📝 Processing model turn with parts:', message.serverContent.modelTurn.parts.length);
-                      for (const part of message.serverContent.modelTurn.parts) {
-                        console.log('🔍 Part structure:', JSON.stringify(part, null, 2));
-                        if (part.inlineData?.mimeType?.startsWith('audio/')) {
-                          console.log('🔊 Sending audio response to client, mimeType:', part.inlineData.mimeType);
-                          ws.send(JSON.stringify({
-                            type: 'audio',
-                            data: part.inlineData.data,
-                            mimeType: part.inlineData.mimeType
-                          }));
-                        } else if (part.text) {
-                          console.log('💬 Sending text response to client:', part.text);
-                          ws.send(JSON.stringify({
-                            type: 'text',
-                            text: part.text
-                          }));
-                        } else {
-                          console.log('❓ Unknown part type:', Object.keys(part));
-                        }
-                      }
-                    } else if (message.toolCall) {
-                      console.log('🔧 Tool call received:', message.toolCall);
-                    } else if (message.setupComplete) {
-                      console.log('✅ Setup complete received');
-                    } else {
-                      console.log('ℹ️ Other message type received:', Object.keys(message));
-                    }
-                  },
-                  onData: (data: any) => {
-                    console.log('Live API data received:', data);
-                    ws.send(JSON.stringify({ type: 'audio', data: data }));
-                  },
-                  onText: (text: string) => {
-                    console.log('Live API text received:', text);
-                    ws.send(JSON.stringify({ type: 'text', text: text }));
-                  },
-                  onError: (error: any) => {
-                    console.error('Live API callback error:', error);
-                    ws.send(JSON.stringify({ type: 'error', error: error.message }));
-                  }
-                }
-              };
+                config: config
+              });
               
-              // Connect using the server-side Live API
-              liveSession = await genAI.live.connect(connectParams);
+              console.log('✅ Connected to Gemini Live API using Python pattern');
               
-              // Debug: Check what methods are available on liveSession
-              console.log('Live session object type:', typeof liveSession);
-              console.log('Live session methods:', Object.getOwnPropertyNames(liveSession));
-              console.log('Live session prototype methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(liveSession)));
-              
-              // Check if liveSession has receive method
-              console.log('Has receive method:', 'receive' in liveSession);
-              console.log('Receive method type:', typeof liveSession.receive);
-              
-              // Callbacks handle responses automatically - no need for manual listening
+              // Start response listening like Python's receive_audio function
+              startResponseListener(liveSession, ws);
               
               // Notify client of successful connection
               ws.send(JSON.stringify({
                 type: 'connected'
               }));
-              
-              console.log('Connected to Gemini Live API via server SDK');
 
             } catch (error) {
               console.error('Error connecting to Gemini Live API:', error);
@@ -223,13 +201,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 console.log('📤 Converted audio data, length:', typeof audioData === 'string' ? audioData.length : 'not string');
                 console.log('📤 Audio data sample:', typeof audioData === 'string' ? audioData.substring(0, 100) : 'Array data');
                 
-                // Use sendRealtimeInput for audio data with correct MIME type
-                await liveSession.sendRealtimeInput({
-                  mediaChunks: [{
-                    mimeType: 'audio/pcm;rate=16000',
-                    data: audioData
-                  }],
-                  turn_complete: false // Still speaking, more audio coming
+                // Send audio data like Python example
+                await liveSession.send({
+                  input: {
+                    data: audioData,
+                    mime_type: "audio/pcm" // Match Python format exactly
+                  }
                 });
                 
                 console.log('✅ Audio data sent successfully to Live API');
