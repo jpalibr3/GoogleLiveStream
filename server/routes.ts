@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
+import { GoogleGenAI, Live } from "@google/genai";
 import { storage } from "./storage";
 
 interface GeminiLiveMessage {
@@ -9,6 +10,35 @@ interface GeminiLiveMessage {
   config?: any;
   data?: any;
   text?: string;
+}
+
+// Helper function to start listening for Live API responses
+async function startLiveSessionListening(liveSession: any, ws: WebSocket) {
+  try {
+    for await (const response of liveSession.receive()) {
+      if (response.data) {
+        // Forward audio data to client
+        ws.send(JSON.stringify({
+          type: 'audio',
+          data: response.data
+        }));
+      }
+      
+      if (response.text) {
+        // Forward text response to client
+        ws.send(JSON.stringify({
+          type: 'text',
+          text: response.text
+        }));
+      }
+    }
+  } catch (error) {
+    console.error('Live session error:', error);
+    ws.send(JSON.stringify({
+      type: 'error',
+      error: `Live session error: ${error}`
+    }));
+  }
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -32,8 +62,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   wss.on('connection', (ws: WebSocket) => {
     console.log('Client connected to WebSocket');
     
-    let geminiWs: WebSocket | null = null;
-    let apiKey: string | null = null;
+    let liveSession: any = null;
+    let genAI: GoogleGenAI | null = null;
 
     ws.on('message', async (data: Buffer) => {
       try {
@@ -41,7 +71,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         switch (message.type) {
           case 'setup':
-            apiKey = message.apiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+            const apiKey = message.apiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
             
             if (!apiKey) {
               ws.send(JSON.stringify({
@@ -51,75 +81,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
               return;
             }
 
-            // Connect to Gemini Live API
+            // Initialize Google GenAI client and Live API on server
             try {
-              const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${apiKey}`;
-              geminiWs = new WebSocket(geminiUrl);
-
-              geminiWs.on('open', () => {
-                console.log('Connected to Gemini Live API');
-                
-                // Send setup configuration
-                if (geminiWs && message.config) {
-                  geminiWs.send(JSON.stringify(message.config));
-                }
-                
-                // Notify client of successful connection
-                ws.send(JSON.stringify({
-                  type: 'connected'
-                }));
-              });
-
-              geminiWs.on('message', (geminiData: Buffer) => {
-                try {
-                  const geminiMessage = JSON.parse(geminiData.toString());
-                  
-                  // Forward Gemini response to client
-                  if (geminiMessage.serverContent) {
-                    // Handle audio response
-                    if (geminiMessage.serverContent.modelTurn?.parts) {
-                      for (const part of geminiMessage.serverContent.modelTurn.parts) {
-                        if (part.inlineData?.data) {
-                          ws.send(JSON.stringify({
-                            type: 'audio',
-                            data: part.inlineData.data
-                          }));
-                        }
-                        if (part.text) {
-                          ws.send(JSON.stringify({
-                            type: 'text',
-                            text: part.text
-                          }));
-                        }
-                      }
+              genAI = new GoogleGenAI({ apiKey });
+              
+              const modelName = message.config?.model || "models/gemini-2.5-flash-preview-native-audio-dialog";
+              const config = {
+                responseModalities: ["AUDIO"],
+                speechConfig: {
+                  voiceConfig: {
+                    prebuiltVoiceConfig: {
+                      voiceName: "Zephyr"
                     }
                   }
-                } catch (error) {
-                  console.error('Error processing Gemini message:', error);
-                }
-              });
+                },
+                mediaResolution: "MEDIA_RESOLUTION_MEDIUM",
+                ...message.config?.generationConfig
+              };
 
-              geminiWs.on('error', (error) => {
-                console.error('Gemini WebSocket error:', error);
-                ws.send(JSON.stringify({
-                  type: 'error',
-                  error: `Gemini API connection error: ${error.message || error}`
-                }));
-              });
-
-              geminiWs.on('close', (code, reason) => {
-                console.log('Gemini WebSocket closed with code:', code, 'reason:', reason.toString());
-                ws.send(JSON.stringify({
-                  type: 'error',
-                  error: `Gemini API connection closed (code: ${code}) - ${reason.toString() || 'Please check API key permissions for Gemini Live API'}`
-                }));
-              });
+              // Connect using the server-side Live API
+              liveSession = await genAI.live.connect({ model: modelName, config });
+              
+              // Start listening for responses in background
+              startLiveSessionListening(liveSession, ws);
+              
+              // Notify client of successful connection
+              ws.send(JSON.stringify({
+                type: 'connected'
+              }));
+              
+              console.log('Connected to Gemini Live API via server SDK');
 
             } catch (error) {
               console.error('Error connecting to Gemini Live API:', error);
               ws.send(JSON.stringify({
                 type: 'error',
-                error: 'Failed to connect to Gemini Live API'
+                error: `Failed to connect to Gemini Live API: ${error}`
               }));
             }
             break;
