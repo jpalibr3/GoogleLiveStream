@@ -22,14 +22,8 @@ export class GeminiLiveClient {
   public onError?: (error: string) => void;
 
   constructor() {
-    // Get API key from environment variables
-    this.apiKey = import.meta.env.VITE_GEMINI_API_KEY || 
-                  import.meta.env.VITE_GOOGLE_API_KEY || 
-                  "";
-    
-    if (!this.apiKey) {
-      console.error("Gemini API key not found. Please set VITE_GEMINI_API_KEY or VITE_GOOGLE_API_KEY environment variable.");
-    }
+    // API key will be handled by the backend server
+    this.apiKey = "";
   }
 
   async connect(config?: GeminiLiveConfig): Promise<void> {
@@ -69,7 +63,6 @@ export class GeminiLiveClient {
 
         this.websocket?.send(JSON.stringify({
           type: "setup",
-          apiKey: this.apiKey,
           config: setupMessage
         }));
       };
