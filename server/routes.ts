@@ -208,8 +208,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   audioData = Buffer.from(buffer).toString('base64');
                 }
                 
-                console.log('📤 Converted audio data, length:', audioData.length);
-                console.log('📤 Audio data sample:', audioData.substring(0, 100));
+                console.log('📤 Converted audio data, length:', typeof audioData === 'string' ? audioData.length : 'not string');
+                console.log('📤 Audio data sample:', typeof audioData === 'string' ? audioData.substring(0, 100) : 'Array data');
                 
                 // Use sendRealtimeInput for audio data
                 await liveSession.sendRealtimeInput({
