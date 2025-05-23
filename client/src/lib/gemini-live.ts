@@ -1,3 +1,4 @@
+import { GoogleGenAI } from "@google/genai";
 import { createAudioBlob, decodeAudioData } from "./audio-utils";
 
 export type ConnectionState = "disconnected" | "connecting" | "connected" | "error";
@@ -11,11 +12,14 @@ export interface GeminiLiveConfig {
 }
 
 export class GeminiLiveClient {
-  private websocket: WebSocket | null = null;
+  private genAI: GoogleGenAI | null = null;
+  private session: any = null;
   private connectionState: ConnectionState = "disconnected";
   private outputAudioContext: AudioContext | null = null;
   private nextStartTime = 0;
   private sources = new Set<AudioBufferSourceNode>();
+  private audioInQueue: any[] = [];
+  private isProcessingAudio = false;
   
   // Event handlers
   public onConnectionStateChange?: (state: ConnectionState) => void;
