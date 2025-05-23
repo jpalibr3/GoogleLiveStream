@@ -225,35 +225,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           case 'text':
             if (liveSession) {
               try {
-                console.log('🔚 Sending turn completion signal to Gemini');
+                console.log('🔚 Sending turn completion like Python example');
                 
-                // Send turn completion signal - empty message signals end of turn
-                await liveSession.sendRealtimeInput({
-                  mediaChunks: [],
-                  turn_complete: true // User finished speaking
+                // Send turn completion like Python: await self.session.send(input=text or ".", end_of_turn=True)
+                await liveSession.send({
+                  input: ".", // Minimal input like Python example
+                  end_of_turn: true // Python pattern for turn completion
                 });
                 
-                console.log('✅ Turn completion signal sent successfully');
-                console.log('⏳ Waiting for Gemini response...');
-                
-                // Also try sending a simple text prompt to test if Gemini responds at all
-                setTimeout(async () => {
-                  try {
-                    console.log('🧪 Sending test text prompt to see if Gemini responds...');
-                    await liveSession.sendClientContent({
-                      turns: [{
-                        role: 'user',
-                        parts: [{
-                          text: 'Please respond with voice saying hello'
-                        }]
-                      }],
-                      turnComplete: true
-                    });
-                    console.log('✅ Test text prompt sent');
-                  } catch (testError) {
-                    console.error('❌ Error sending test prompt:', testError);
-                  }
-                }, 1000);
+                console.log('✅ Turn completion sent successfully (Python pattern)');
               } catch (error) {
                 console.error('Error sending text to Live API:', error);
                 ws.send(JSON.stringify({
