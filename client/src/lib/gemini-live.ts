@@ -119,9 +119,21 @@ export class GeminiLiveClient {
           
         case 'audio':
           if (message.data) {
-            const audioData = new Uint8Array(message.data);
-            await this.playAudioData(audioData);
-            this.onAudioReceived?.(audioData);
+            console.log('🔊 Processing audio response from Gemini');
+            try {
+              // Decode base64 audio data from Gemini
+              const base64Data = message.data;
+              const binaryString = atob(base64Data);
+              const audioData = new Uint8Array(binaryString.length);
+              for (let i = 0; i < binaryString.length; i++) {
+                audioData[i] = binaryString.charCodeAt(i);
+              }
+              
+              await this.playGeminiAudio(audioData, message.mimeType || 'audio/pcm;rate=24000');
+              this.onAudioReceived?.(audioData);
+            } catch (error) {
+              console.error('Error processing Gemini audio:', error);
+            }
           }
           break;
           
@@ -165,6 +177,49 @@ export class GeminiLiveClient {
       };
     } catch (error) {
       console.error('Error decoding/playing audio:', error);
+    }
+  }
+
+  private async playGeminiAudio(audioData: Uint8Array, mimeType: string): Promise<void> {
+    if (!this.outputAudioContext) return;
+
+    try {
+      console.log('🎵 Decoding Gemini PCM audio, length:', audioData.length, 'mimeType:', mimeType);
+      
+      // Parse sample rate from mime type (e.g., "audio/pcm;rate=24000")
+      const sampleRate = mimeType.includes('rate=') ? 
+        parseInt(mimeType.split('rate=')[1]) : 24000;
+      
+      // Convert PCM bytes to 16-bit signed integers (little-endian)
+      const samples = new Int16Array(audioData.buffer, audioData.byteOffset, audioData.byteLength / 2);
+      
+      // Create audio buffer
+      const audioBuffer = this.outputAudioContext.createBuffer(1, samples.length, sampleRate);
+      const channelData = audioBuffer.getChannelData(0);
+      
+      // Convert 16-bit PCM to float32 (-1.0 to 1.0)
+      for (let i = 0; i < samples.length; i++) {
+        channelData[i] = samples[i] / 32768.0; // Normalize 16-bit to float
+      }
+      
+      // Play the audio
+      const source = this.outputAudioContext.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(this.outputAudioContext.destination);
+      
+      const startTime = Math.max(this.nextStartTime, this.outputAudioContext.currentTime);
+      source.start(startTime);
+      this.nextStartTime = startTime + audioBuffer.duration;
+      
+      this.sources.add(source);
+      source.onended = () => {
+        this.sources.delete(source);
+      };
+      
+      console.log('✅ Successfully playing Gemini audio, duration:', audioBuffer.duration.toFixed(2), 'seconds');
+      
+    } catch (error) {
+      console.error('Error decoding/playing Gemini audio:', error);
     }
   }
 
