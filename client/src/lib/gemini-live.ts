@@ -39,182 +39,181 @@ export class GeminiLiveClient {
       return;
     }
 
-    this.setConnectionState("connecting");
-
     try {
-      // Get API key from backend
-      const response = await fetch('/api/get-api-key');
+      this.setConnectionState("connecting");
+      
+      // Get API key from server
+      const response = await fetch("/api/get-api-key");
+      if (!response.ok) {
+        throw new Error("Failed to get API key");
+      }
       const { apiKey } = await response.json();
       
       if (!apiKey) {
         throw new Error("API key not available");
       }
 
-      // Connect directly to Gemini Live API WebSocket with v1beta
-      const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${apiKey}`;
-      this.websocket = new WebSocket(wsUrl);
+      // Initialize Google GenAI client
+      this.genAI = new GoogleGenAI(apiKey);
 
-      this.websocket.onopen = () => {
-        console.log('Connected to Gemini Live API');
-        
-        // Send initial setup configuration
-        const setupMessage = {
-          setup: {
-            model: config?.model || "models/gemini-2.5-flash-preview-native-audio-dialog",
-            generationConfig: {
-              responseModalities: ["AUDIO"],
-              speechConfig: {
-                voiceConfig: {
-                  prebuiltVoiceConfig: {
-                    voiceName: "Zephyr"
-                  }
-                }
-              },
-              mediaResolution: "MEDIA_RESOLUTION_MEDIUM",
-              ...config?.generationConfig
+      // Create Live session configuration
+      const liveConfig = {
+        responseModalities: ["AUDIO"],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: {
+              voiceName: "Zephyr"
             }
           }
-        };
-
-        this.websocket?.send(JSON.stringify(setupMessage));
-        this.setConnectionState("connected");
+        },
+        mediaResolution: "MEDIA_RESOLUTION_MEDIUM",
+        ...config?.generationConfig
       };
 
-      this.websocket.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data);
-          this.handleGeminiMessage(message);
-        } catch (error) {
-          console.error("Error parsing WebSocket message:", error);
-        }
-      };
+      // Connect to Live API
+      const modelName = config?.model || "models/gemini-2.5-flash-preview-native-audio-dialog";
+      this.session = await this.genAI.live.connect(modelName, liveConfig);
 
-      this.websocket.onerror = (error) => {
-        console.error("WebSocket error:", error);
-        this.setConnectionState("error");
-        this.onError?.("WebSocket connection error");
-      };
-
-      this.websocket.onclose = (event) => {
-        console.log("WebSocket connection closed:", event.code, event.reason);
-        if (event.code !== 1000) {
-          console.error("WebSocket closed with error code:", event.code, "reason:", event.reason);
-          this.onError?.(`WebSocket closed with code ${event.code}: ${event.reason || 'Connection failed'}`);
-        }
-        this.setConnectionState("disconnected");
-        this.websocket = null;
-      };
+      // Set up audio processing
+      this.startAudioProcessing();
+      
+      this.setConnectionState("connected");
+      console.log('Connected to Gemini Live API via official SDK');
 
     } catch (error) {
-      console.error("Error connecting to Gemini Live:", error);
+      console.error('Error connecting to Gemini Live:', error);
       this.setConnectionState("error");
-      this.onError?.(`Connection failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+      this.onError?.(`Connection failed: ${error}`);
+      throw error;
+    }
+  }
+
+  private async startAudioProcessing(): Promise<void> {
+    if (!this.session) return;
+
+    try {
+      // Start listening for responses
+      for await (const response of this.session.receive()) {
+        if (response.data) {
+          // Handle audio data
+          this.audioInQueue.push(response.data);
+          if (!this.isProcessingAudio) {
+            this.processAudioQueue();
+          }
+          this.onAudioReceived?.(response.data);
+        }
+        
+        if (response.text) {
+          // Handle text response
+          console.log('Text response:', response.text);
+          this.onTextReceived?.(response.text);
+        }
+      }
+    } catch (error) {
+      console.error('Audio processing error:', error);
+      this.onError?.(`Audio processing error: ${error}`);
+    }
+  }
+
+  private async processAudioQueue(): Promise<void> {
+    if (this.isProcessingAudio || this.audioInQueue.length === 0) return;
+    
+    this.isProcessingAudio = true;
+    
+    while (this.audioInQueue.length > 0) {
+      const audioData = this.audioInQueue.shift();
+      if (audioData && this.outputAudioContext) {
+        try {
+          await this.playAudioData(audioData);
+        } catch (error) {
+          console.error('Error playing audio:', error);
+        }
+      }
+    }
+    
+    this.isProcessingAudio = false;
+  }
+
+  private async playAudioData(audioData: Uint8Array): Promise<void> {
+    if (!this.outputAudioContext) return;
+
+    try {
+      const audioBuffer = await decodeAudioData(audioData, this.outputAudioContext);
+      const source = this.outputAudioContext.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(this.outputAudioContext.destination);
+      
+      const startTime = Math.max(this.nextStartTime, this.outputAudioContext.currentTime);
+      source.start(startTime);
+      this.nextStartTime = startTime + audioBuffer.duration;
+      
+      this.sources.add(source);
+      source.onended = () => {
+        this.sources.delete(source);
+      };
+    } catch (error) {
+      console.error('Error decoding/playing audio:', error);
     }
   }
 
   disconnect(): void {
-    if (this.websocket) {
-      this.websocket.close();
-      this.websocket = null;
+    if (this.session) {
+      this.session.close?.();
+      this.session = null;
     }
-    this.setConnectionState("disconnected");
     
-    // Stop all audio sources
     this.sources.forEach(source => {
-      source.stop();
+      try {
+        source.stop();
+      } catch (e) {
+        // Source might already be stopped
+      }
     });
     this.sources.clear();
+    
+    this.setConnectionState("disconnected");
   }
 
   sendAudio(audioData: Float32Array): void {
-    if (!this.isConnected()) return;
+    if (!this.session || this.connectionState !== "connected") {
+      console.warn('Cannot send audio: not connected');
+      return;
+    }
 
-    const audioBlob = createAudioBlob(audioData);
-    const message = {
-      realtimeInput: {
-        audio: audioBlob
-      }
-    };
-    
-    this.websocket?.send(JSON.stringify(message));
+    try {
+      // Convert Float32Array to the format expected by the Live API
+      const audioMessage = {
+        data: audioData,
+        mimeType: "audio/pcm"
+      };
+      
+      this.session.send(audioMessage);
+    } catch (error) {
+      console.error('Error sending audio:', error);
+      this.onError?.(`Failed to send audio: ${error}`);
+    }
   }
 
   sendText(text: string): void {
-    if (!this.isConnected()) return;
+    if (!this.session || this.connectionState !== "connected") {
+      console.warn('Cannot send text: not connected');
+      return;
+    }
 
-    const message = {
-      clientContent: {
-        turns: [{ role: "user", parts: [{ text: text }] }],
-        turnComplete: true
-      }
-    };
-    
-    this.websocket?.send(JSON.stringify(message));
+    try {
+      this.session.send(text);
+    } catch (error) {
+      console.error('Error sending text:', error);
+      this.onError?.(`Failed to send text: ${error}`);
+    }
   }
 
   isConnected(): boolean {
-    return this.connectionState === "connected" && 
-           this.websocket?.readyState === WebSocket.OPEN;
+    return this.connectionState === "connected";
   }
 
   private setConnectionState(state: ConnectionState): void {
     this.connectionState = state;
     this.onConnectionStateChange?.(state);
-  }
-
-  private async handleGeminiMessage(message: any): Promise<void> {
-    try {
-      const audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData;
-
-      if (audio && this.outputAudioContext) {
-        this.nextStartTime = Math.max(
-          this.nextStartTime,
-          this.outputAudioContext.currentTime,
-        );
-
-        const audioBuffer = await decodeAudioData(
-          audio.data,
-          this.outputAudioContext,
-          24000,
-          1,
-        );
-        
-        const source = this.outputAudioContext.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(this.outputAudioContext.destination);
-        
-        source.addEventListener('ended', () => {
-          this.sources.delete(source);
-        });
-
-        source.start(this.nextStartTime);
-        this.nextStartTime = this.nextStartTime + audioBuffer.duration;
-        this.sources.add(source);
-        
-        // Notify audio received
-        this.onAudioReceived?.(new Uint8Array(audioBuffer.getChannelData(0).buffer));
-      }
-
-      // Handle interruptions
-      const interrupted = message.serverContent?.interrupted;
-      if (interrupted) {
-        this.sources.forEach(source => {
-          source.stop();
-        });
-        this.sources.clear();
-        this.nextStartTime = 0;
-      }
-
-      // Handle text responses
-      if (message.serverContent?.modelTurn?.parts) {
-        for (const part of message.serverContent.modelTurn.parts) {
-          if (part.text) {
-            this.onTextReceived?.(part.text);
-          }
-        }
-      }
-    } catch (error) {
-      console.error("Error processing Gemini message:", error);
-    }
   }
 }
