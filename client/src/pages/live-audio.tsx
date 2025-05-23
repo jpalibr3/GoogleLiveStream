@@ -26,6 +26,7 @@ export default function LiveAudio() {
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
   const [statusMessage, setStatusMessage] = useState("Ready to connect to Gemini Live");
   const [error, setError] = useState<string | null>(null);
+  const [selectedModel, setSelectedModel] = useState("models/gemini-2.0-flash-live-001");
   
   // Refs for audio processing
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -276,8 +277,50 @@ export default function LiveAudio() {
     setStatusMessage("Session cleared. Ready to connect to Gemini Live.");
   }, [handleStopRecording]);
 
+  // Available models for switching
+  const availableModels = [
+    { value: "models/gemini-2.0-flash-live-001", label: "Gemini 2.0 Flash Live" },
+    { value: "models/gemini-2.5-flash-preview-native-audio-dialog", label: "Gemini 2.5 Flash Preview" }
+  ];
+
+  // Handle model change
+  const handleModelChange = useCallback((newModel: string) => {
+    setSelectedModel(newModel);
+    
+    // If currently connected, disconnect and reconnect with new model
+    if (connectionState === "connected") {
+      geminiClientRef.current?.disconnect();
+      setTimeout(() => {
+        geminiClientRef.current?.connect({ model: newModel });
+      }, 500);
+    }
+    
+    toast({
+      title: "Model Changed",
+      description: `Switched to ${availableModels.find(m => m.value === newModel)?.label}`,
+    });
+  }, [connectionState, toast]);
+
   return (
     <div className="relative w-screen h-screen overflow-hidden">
+      {/* Model Selector - Top Right */}
+      <div className="absolute top-4 right-4 z-20">
+        <div className="glass-morphism rounded-lg p-3">
+          <label className="text-white text-xs font-medium mb-2 block">Model</label>
+          <select
+            value={selectedModel}
+            onChange={(e) => handleModelChange(e.target.value)}
+            className="bg-black/20 text-white text-sm rounded px-3 py-1 border border-white/20 min-w-[200px]"
+          >
+            {availableModels.map((model) => (
+              <option key={model.value} value={model.value} className="bg-gray-800">
+                {model.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       {/* Three.js 3D Scene */}
       <ThreeScene 
         inputAnalyzer={inputAnalyzerRef.current}
