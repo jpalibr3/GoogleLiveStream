@@ -195,8 +195,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 console.log('📤 Received audio data from client, length:', Array.isArray(message.data) ? message.data.length : 'not array');
                 console.log('📤 Audio data type:', typeof message.data);
                 
-                // Convert array back to base64 if needed
-                let audioData = message.data;
+                // Convert array to base64 for Live API
+                let audioData: string;
                 if (Array.isArray(message.data)) {
                   // Convert Float32Array back to base64
                   const float32Array = new Float32Array(message.data);
@@ -206,6 +206,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                     view.setFloat32(i * 4, float32Array[i], true);
                   }
                   audioData = Buffer.from(buffer).toString('base64');
+                } else {
+                  audioData = String(message.data);
                 }
                 
                 console.log('📤 Converted audio data, length:', typeof audioData === 'string' ? audioData.length : 'not string');
