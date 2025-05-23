@@ -218,7 +218,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   mediaChunks: [{
                     mimeType: 'audio/pcm;rate=16000',
                     data: audioData
-                  }]
+                  }],
+                  turn_complete: false // Still speaking, more audio coming
                 });
                 
                 console.log('✅ Audio data sent successfully to Live API');
@@ -235,16 +236,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
             break;
 
           case 'text':
-            if (liveSession && message.text) {
+            if (liveSession) {
               try {
-                // Use sendClientContent for text
-                await liveSession.sendClientContent({
-                  turns: [{
-                    role: 'user',
-                    parts: [{
-                      text: message.text
-                    }]
-                  }]
+                console.log('🔚 Sending turn completion signal to Gemini');
+                
+                // Send turn completion signal - empty message signals end of turn
+                await liveSession.sendRealtimeInput({
+                  mediaChunks: [],
+                  turn_complete: true // User finished speaking
                 });
               } catch (error) {
                 console.error('Error sending text to Live API:', error);

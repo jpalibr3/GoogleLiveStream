@@ -187,6 +187,12 @@ export default function LiveAudio() {
     inputAnalyzerRef.current = null;
     outputAnalyzerRef.current = null;
     
+    // Signal turn completion to Gemini before stopping
+    if (geminiClientRef.current?.isConnected()) {
+      console.log('🔚 Signaling turn completion to Gemini');
+      geminiClientRef.current.sendText(''); // Empty message with turn complete
+    }
+
     setIsRecording(false);
     setStatusMessage("Recording stopped. Click Start to begin again.");
   }, []);
