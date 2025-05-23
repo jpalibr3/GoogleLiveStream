@@ -29,6 +29,7 @@ export default function LiveAudio() {
   
   // Refs for audio processing
   const audioContextRef = useRef<AudioContext | null>(null);
+  const playbackAudioContextRef = useRef<AudioContext | null>(null); // Dedicated 24kHz context for Gemini audio
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const inputAnalyzerRef = useRef<AudioAnalyzer | null>(null);
   const outputAnalyzerRef = useRef<AudioAnalyzer | null>(null);
@@ -96,48 +97,45 @@ export default function LiveAudio() {
 
   // Play audio response from Gemini
   const playAudioResponse = useCallback(async (base64AudioData: string, mimeType: string = 'audio/pcm;rate=24000') => {
-    if (!audioContextRef.current) {
-      console.warn("Audio context not available for playback");
-      return;
-    }
-
     try {
       console.log('🔊 Playing audio response, base64 length:', base64AudioData.length, 'mimeType:', mimeType);
       
-      // Extract sample rate from mimeType and ensure proper decoding
+      // Extract sample rate from mimeType
       const sampleRate = parseInt(mimeType.split('rate=')[1]) || 24000;
       console.log('🎵 Detected sample rate:', sampleRate, 'Hz');
       
-      // Use the existing audio context but handle sample rate properly in decoding
+      // Create or reuse dedicated playback context with correct sample rate
+      if (!playbackAudioContextRef.current || playbackAudioContextRef.current.sampleRate !== sampleRate) {
+        if (playbackAudioContextRef.current) {
+          playbackAudioContextRef.current.close();
+        }
+        playbackAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({
+          sampleRate: sampleRate
+        });
+        console.log('🎵 Created dedicated playback AudioContext at', sampleRate, 'Hz');
+      }
+      
+      // Decode audio using the dedicated playback context
       const audioBuffer = await customDecodeAudioData(
         base64AudioData,
-        audioContextRef.current, // Use existing context to avoid connection issues
+        playbackAudioContextRef.current,
         sampleRate,
         1 // Assuming mono audio from Gemini
       );
       
-      const source = audioContextRef.current.createBufferSource();
+      const source = playbackAudioContextRef.current.createBufferSource();
       source.buffer = audioBuffer;
 
-      // Connect to output analyzer if available (using same context)
-      if (!outputAnalyzerRef.current && audioContextRef.current) {
-        outputAnalyzerRef.current = new AudioAnalyzer(audioContextRef.current);
-      }
-
-      if (outputAnalyzerRef.current) {
-        source.connect(outputAnalyzerRef.current.analyserNode);
-        outputAnalyzerRef.current.analyserNode.connect(audioContextRef.current.destination);
-      } else {
-        source.connect(audioContextRef.current.destination);
-      }
+      // Connect directly to destination (no cross-context analyzer for now)
+      source.connect(playbackAudioContextRef.current.destination);
       
-      // Ensure the audio context is resumed before starting playback
-      if (audioContextRef.current.state === 'suspended') {
-        await audioContextRef.current.resume();
+      // Ensure the playback context is resumed
+      if (playbackAudioContextRef.current.state === 'suspended') {
+        await playbackAudioContextRef.current.resume();
       }
       
       source.start();
-      console.log('✅ Audio response playback started successfully at', sampleRate, 'Hz');
+      console.log('✅ Audio response playback started successfully with dedicated', sampleRate, 'Hz context');
 
     } catch (error) {
       console.error("Error playing audio response:", error);
