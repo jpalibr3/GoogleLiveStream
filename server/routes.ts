@@ -156,8 +156,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
               };
 
               console.log('Attempting to connect to Gemini Live API...');
+              
+              // Add required callbacks parameter based on TypeScript error
+              const connectParams = {
+                model: modelName,
+                config,
+                callbacks: {
+                  onData: (data: any) => {
+                    console.log('Live API data received:', data);
+                    ws.send(JSON.stringify({ type: 'audio', data: data }));
+                  },
+                  onText: (text: string) => {
+                    console.log('Live API text received:', text);
+                    ws.send(JSON.stringify({ type: 'text', text: text }));
+                  },
+                  onError: (error: any) => {
+                    console.error('Live API callback error:', error);
+                    ws.send(JSON.stringify({ type: 'error', error: error.message }));
+                  }
+                }
+              };
+              
               // Connect using the server-side Live API
-              liveSession = await genAI.live.connect({ model: modelName, config });
+              liveSession = await genAI.live.connect(connectParams);
+              
+              // Debug: Check what methods are available on liveSession
+              console.log('Live session object type:', typeof liveSession);
+              console.log('Live session methods:', Object.getOwnPropertyNames(liveSession));
+              console.log('Live session prototype methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(liveSession)));
+              
+              // Check if liveSession has receive method
+              console.log('Has receive method:', 'receive' in liveSession);
+              console.log('Receive method type:', typeof liveSession.receive);
               
               // Start listening for responses in background
               startLiveSessionListening(liveSession, ws);
