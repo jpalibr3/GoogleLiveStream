@@ -102,39 +102,46 @@ export default function LiveAudio() {
     }
 
     try {
-      console.log('🔊 Playing audio response, base64 length:', base64AudioData.length);
+      console.log('🔊 Playing audio response, base64 length:', base64AudioData.length, 'mimeType:', mimeType);
       
-      // Use custom decodeAudioData for base64 PCM data
+      // Extract sample rate from mimeType and ensure proper decoding
       const sampleRate = parseInt(mimeType.split('rate=')[1]) || 24000;
+      console.log('🎵 Detected sample rate:', sampleRate, 'Hz');
+      
+      // Create new audio context with correct sample rate for Gemini audio
+      const geminiAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
+        sampleRate: sampleRate
+      });
+      
       const audioBuffer = await customDecodeAudioData(
         base64AudioData,
-        audioContextRef.current,
+        geminiAudioContext, // Use context with matching sample rate
         sampleRate,
         1 // Assuming mono audio from Gemini
       );
       
-      const source = audioContextRef.current.createBufferSource();
+      const source = geminiAudioContext.createBufferSource();
       source.buffer = audioBuffer;
 
       // Connect to output analyzer if available
-      if (!outputAnalyzerRef.current && audioContextRef.current) {
-        outputAnalyzerRef.current = new AudioAnalyzer(audioContextRef.current);
+      if (!outputAnalyzerRef.current && geminiAudioContext) {
+        outputAnalyzerRef.current = new AudioAnalyzer(geminiAudioContext);
       }
 
       if (outputAnalyzerRef.current) {
         source.connect(outputAnalyzerRef.current.analyserNode);
-        outputAnalyzerRef.current.analyserNode.connect(audioContextRef.current.destination);
+        outputAnalyzerRef.current.analyserNode.connect(geminiAudioContext.destination);
       } else {
-        source.connect(audioContextRef.current.destination);
+        source.connect(geminiAudioContext.destination);
       }
       
       // Ensure the audio context is resumed before starting playback
-      if (audioContextRef.current.state === 'suspended') {
-        await audioContextRef.current.resume();
+      if (geminiAudioContext.state === 'suspended') {
+        await geminiAudioContext.resume();
       }
       
       source.start();
-      console.log('✅ Audio response playback started successfully');
+      console.log('✅ Audio response playback started successfully at', sampleRate, 'Hz');
 
     } catch (error) {
       console.error("Error playing audio response:", error);
