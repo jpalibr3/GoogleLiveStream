@@ -261,6 +261,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   mediaChunks: [],
                   turn_complete: true // User finished speaking
                 });
+                
+                console.log('✅ Turn completion signal sent successfully');
+                console.log('⏳ Waiting for Gemini response...');
+                
+                // Also try sending a simple text prompt to test if Gemini responds at all
+                setTimeout(async () => {
+                  try {
+                    console.log('🧪 Sending test text prompt to see if Gemini responds...');
+                    await liveSession.sendClientContent({
+                      turns: [{
+                        role: 'user',
+                        parts: [{
+                          text: 'Please respond with voice saying hello'
+                        }]
+                      }],
+                      turnComplete: true
+                    });
+                    console.log('✅ Test text prompt sent');
+                  } catch (testError) {
+                    console.error('❌ Error sending test prompt:', testError);
+                  }
+                }, 1000);
               } catch (error) {
                 console.error('Error sending text to Live API:', error);
                 ws.send(JSON.stringify({
