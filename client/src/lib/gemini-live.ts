@@ -264,6 +264,25 @@ export class GeminiLiveClient {
     }
   }
 
+  endTurn(): void {
+    if (!this.websocket || this.connectionState !== "connected") {
+      console.warn('Cannot end turn: not connected');
+      return;
+    }
+
+    try {
+      const message = {
+        type: 'endTurn'
+      };
+      
+      this.websocket.send(JSON.stringify(message));
+      console.log('🔚 Signaling end of turn to Gemini');
+    } catch (error) {
+      console.error('❌ Error ending turn:', error);
+      this.onError?.(`Failed to end turn: ${error}`);
+    }
+  }
+
   sendText(text: string): void {
     if (!this.websocket || this.connectionState !== "connected") {
       console.warn('Cannot send text: not connected');

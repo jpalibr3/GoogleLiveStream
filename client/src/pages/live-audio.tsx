@@ -190,7 +190,7 @@ export default function LiveAudio() {
     // Signal turn completion to Gemini before stopping
     if (geminiClientRef.current?.isConnected()) {
       console.log('🔚 Signaling turn completion to Gemini');
-      geminiClientRef.current.sendText(''); // Empty message with turn complete
+      geminiClientRef.current.endTurn();
     }
 
     setIsRecording(false);

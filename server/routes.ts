@@ -316,6 +316,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
             break;
 
+          case 'endTurn':
+            if (liveSession) {
+              try {
+                console.log('🔚 Signaling end of turn to Live API');
+                
+                // Signal end of turn using the Live API
+                await liveSession.sendRealtimeInput({
+                  "end_of_turn": true
+                });
+                
+                console.log('✅ End of turn signal sent successfully');
+              } catch (error) {
+                console.error('Error sending end of turn to Live API:', error);
+                ws.send(JSON.stringify({
+                  type: 'error',
+                  error: `Failed to send end of turn: ${error}`
+                }));
+              }
+            }
+            break;
+
           default:
             console.log('Unknown message type:', message.type);
         }
