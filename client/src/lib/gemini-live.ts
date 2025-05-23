@@ -121,16 +121,9 @@ export class GeminiLiveClient {
           if (message.data) {
             console.log('🔊 Processing audio response from Gemini');
             try {
-              // Decode base64 audio data from Gemini
-              const base64Data = message.data;
-              const binaryString = atob(base64Data);
-              const audioData = new Uint8Array(binaryString.length);
-              for (let i = 0; i < binaryString.length; i++) {
-                audioData[i] = binaryString.charCodeAt(i);
-              }
-              
-              await this.playGeminiAudio(audioData, message.mimeType || 'audio/pcm;rate=24000');
-              this.onAudioReceived?.(audioData);
+              // Forward base64 data directly to callback
+              const mimeType = message.mimeType || 'audio/pcm;rate=24000';
+              this.onAudioReceived?.(message.data as string, mimeType);
             } catch (error) {
               console.error('Error processing Gemini audio:', error);
             }

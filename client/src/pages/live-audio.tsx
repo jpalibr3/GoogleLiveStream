@@ -6,6 +6,7 @@ import { StatusOverlay } from "@/components/status-overlay";
 import { AudioAnalyzer } from "@/lib/audio-analyzer";
 import { GeminiLiveClient, ConnectionState } from "@/lib/gemini-live";
 import { VoiceActivityDetector } from "@/lib/voice-activity-detector";
+import { decodeAudioData as customDecodeAudioData } from "@/lib/audio-utils";
 import { useToast } from "@/hooks/use-toast";
 
 interface ParticleProps {
@@ -74,9 +75,9 @@ export default function LiveAudio() {
       }
     };
 
-    client.onAudioReceived = (audioData) => {
+    client.onAudioReceived = (base64AudioData, mimeType) => {
       // Handle received audio from Gemini
-      playAudioResponse(audioData);
+      playAudioResponse(base64AudioData, mimeType);
     };
 
     client.onError = (errorMessage) => {
@@ -94,25 +95,50 @@ export default function LiveAudio() {
   }, [toast]);
 
   // Play audio response from Gemini
-  const playAudioResponse = useCallback(async (audioData: Uint8Array) => {
-    if (!audioContextRef.current) return;
+  const playAudioResponse = useCallback(async (base64AudioData: string, mimeType: string = 'audio/pcm;rate=24000') => {
+    if (!audioContextRef.current) {
+      console.warn("Audio context not available for playback");
+      return;
+    }
 
     try {
-      // Decode the audio data and play it
-      const audioBuffer = await audioContextRef.current.decodeAudioData(audioData.buffer.slice());
+      console.log('🔊 Playing audio response, base64 length:', base64AudioData.length);
+      
+      // Use custom decodeAudioData for base64 PCM data
+      const sampleRate = parseInt(mimeType.split('rate=')[1]) || 24000;
+      const audioBuffer = await customDecodeAudioData(
+        base64AudioData,
+        audioContextRef.current,
+        sampleRate,
+        1 // Assuming mono audio from Gemini
+      );
+      
       const source = audioContextRef.current.createBufferSource();
       source.buffer = audioBuffer;
-      
-      // Create analyzer for output audio
-      if (!outputAnalyzerRef.current) {
+
+      // Connect to output analyzer if available
+      if (!outputAnalyzerRef.current && audioContextRef.current) {
         outputAnalyzerRef.current = new AudioAnalyzer(audioContextRef.current);
       }
+
+      if (outputAnalyzerRef.current) {
+        source.connect(outputAnalyzerRef.current.analyserNode);
+        outputAnalyzerRef.current.analyserNode.connect(audioContextRef.current.destination);
+      } else {
+        source.connect(audioContextRef.current.destination);
+      }
       
-      source.connect(outputAnalyzerRef.current.analyser);
-      source.connect(audioContextRef.current.destination);
+      // Ensure the audio context is resumed before starting playback
+      if (audioContextRef.current.state === 'suspended') {
+        await audioContextRef.current.resume();
+      }
+      
       source.start();
+      console.log('✅ Audio response playback started successfully');
+
     } catch (error) {
       console.error("Error playing audio response:", error);
+      setError(`Playback error: ${error instanceof Error ? error.message : String(error)}`);
     }
   }, []);
 
