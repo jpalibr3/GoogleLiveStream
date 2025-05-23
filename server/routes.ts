@@ -332,19 +332,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
           case 'endTurn':
             if (liveSession) {
               try {
-                console.log('🔚 Signaling end of turn to Live API');
+                console.log('🔚 Signaling end of turn to Live API with proper structure');
                 
-                // Signal end of turn using correct API structure
+                // Signal end of turn using correct API structure with required turns array
                 await liveSession.sendClientContent({
+                  turns: [
+                    {
+                      role: "user",
+                      parts: [] // Empty parts for turn completion signal
+                    }
+                  ],
                   turnComplete: true
                 });
                 
-                console.log('✅ End of turn signal sent successfully');
+                console.log('✅ End of turn signal sent successfully with proper structure');
               } catch (error) {
                 console.error('Error sending end of turn to Live API:', error);
                 ws.send(JSON.stringify({
                   type: 'error',
-                  error: `Failed to send end of turn: ${error}`
+                  error: `Failed to send end of turn: ${error instanceof Error ? error.message : String(error)}`
                 }));
               }
             }
