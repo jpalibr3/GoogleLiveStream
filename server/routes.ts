@@ -164,27 +164,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 }
               };
 
-              console.log('🚀 Connecting using TypeScript callback pattern...');
+              console.log('🧪 Testing Live API connection with detailed logging...');
+              console.log('📋 Model:', modelName);
+              console.log('📋 Config:', JSON.stringify(config, null, 2));
               
-              // Use callback-based connection like TypeScript example
-              liveSession = await genAI.live.connect({
+              // Test connection with comprehensive error handling
+              try {
+                console.log('🔄 Calling genAI.live.connect()...');
+                liveSession = await genAI.live.connect({
                 model: modelName,
                 callbacks: {
                   onopen: function () {
-                    console.log('✅ Live API connection opened');
+                    console.log('✅ SUCCESS: Live API connection opened!');
                     ws.send(JSON.stringify({
-                      type: 'connected'
+                      type: 'debug',
+                      message: 'Live API connection established successfully'
                     }));
                   },
                   onmessage: function (message: LiveServerMessage) {
-                    console.log('🔔 Message received, adding to queue');
+                    console.log('🔔 SUCCESS: Message received from Live API:', JSON.stringify(message, null, 2));
                     responseQueue.push(message);
                   },
                   onerror: function (e: ErrorEvent) {
-                    console.error('❌ Live API error:', e.message);
+                    console.error('❌ LIVE API ERROR DETAILS:');
+                    console.error('  - Error object:', e);
+                    console.error('  - Message:', e.message);
+                    console.error('  - Type:', e.type);
+                    console.error('  - Error property:', e.error);
                     ws.send(JSON.stringify({
                       type: 'error',
-                      error: e.message
+                      error: `Live API Error: ${e.message || e.type || 'Connection failed'}`
                     }));
                     // Attempt to close and cleanup on error
                     if (liveSession) {
@@ -206,7 +215,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 config
               });
               
-              console.log('✅ Connected to Gemini Live API using TypeScript pattern');
+              console.log('✅ SUCCESS: genAI.live.connect() completed without throwing');
               
               // Start processing responses
               handleTurn(ws);
@@ -215,6 +224,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
               ws.send(JSON.stringify({
                 type: 'connected'
               }));
+              
+              } catch (connectError) {
+                console.error('❌ CRITICAL: genAI.live.connect() failed completely:');
+                console.error('  - Error type:', typeof connectError);
+                console.error('  - Error object:', connectError);
+                console.error('  - Error message:', connectError instanceof Error ? connectError.message : String(connectError));
+                console.error('  - Error stack:', connectError instanceof Error ? connectError.stack : 'No stack trace');
+                
+                ws.send(JSON.stringify({
+                  type: 'error',
+                  error: `Live API Connection Failed: ${connectError instanceof Error ? connectError.message : String(connectError)}`
+                }));
+                
+                throw connectError; // Re-throw to be caught by outer try-catch
+              }
 
             } catch (error) {
               console.error('Error connecting to Gemini Live API:', error);
