@@ -37,6 +37,47 @@ export default function LiveAudio() {
   const voiceDetectorRef = useRef<VoiceActivityDetector | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   
+  // Audio queue system for sequential playback
+  const audioQueueRef = useRef<AudioBuffer[]>([]);
+  const nextPlayTimeRef = useRef<number>(0);
+  const isPlayingRef = useRef<boolean>(false);
+  
+  // Sequential audio playback handler
+  const playNextInQueue = useCallback(() => {
+    if (!playbackAudioContextRef.current || audioQueueRef.current.length === 0 || isPlayingRef.current) {
+      return;
+    }
+    
+    const buffer = audioQueueRef.current.shift();
+    if (!buffer) return;
+    
+    isPlayingRef.current = true;
+    const source = playbackAudioContextRef.current.createBufferSource();
+    source.buffer = buffer;
+    
+    // Connect to destination and analyzer
+    source.connect(playbackAudioContextRef.current.destination);
+    if (outputAnalyzerRef.current) {
+      source.connect(outputAnalyzerRef.current.analyserNode);
+    }
+    
+    // Calculate start time
+    const currentTime = playbackAudioContextRef.current.currentTime;
+    const startTime = Math.max(currentTime, nextPlayTimeRef.current);
+    
+    // Schedule playback
+    source.start(startTime);
+    nextPlayTimeRef.current = startTime + buffer.duration;
+    
+    console.log('🎵 Playing audio chunk sequentially, duration:', buffer.duration, 'start time:', startTime);
+    
+    // When this chunk ends, try to play the next one
+    source.onended = () => {
+      isPlayingRef.current = false;
+      playNextInQueue();
+    };
+  }, []);
+  
   // Generate floating particles
   const [particles] = useState<ParticleProps[]>(() => {
     return Array.from({ length: 8 }, (_, i) => ({
@@ -95,53 +136,56 @@ export default function LiveAudio() {
     };
   }, [toast]);
 
-  // Play audio response from Gemini
+  // Play audio response from Gemini using sequential queue
   const playAudioResponse = useCallback(async (base64AudioData: string, mimeType: string = 'audio/pcm;rate=24000') => {
     try {
-      console.log('🔊 Playing audio response, base64 length:', base64AudioData.length, 'mimeType:', mimeType);
+      console.log('🔊 Queuing audio response, base64 length:', base64AudioData.length, 'mimeType:', mimeType);
       
-      // Extract sample rate from mimeType
+      // Extract sample rate from mimeType (Priority 1: Correct playback sample rate)
       const sampleRate = parseInt(mimeType.split('rate=')[1]) || 24000;
       console.log('🎵 Detected sample rate:', sampleRate, 'Hz');
       
-      // Create or reuse dedicated playback context with correct sample rate
-      if (!playbackAudioContextRef.current || playbackAudioContextRef.current.sampleRate !== sampleRate) {
-        if (playbackAudioContextRef.current) {
-          playbackAudioContextRef.current.close();
-        }
+      // Create dedicated 24kHz playback context (separate from 16kHz recording context)
+      if (!playbackAudioContextRef.current) {
         playbackAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({
-          sampleRate: sampleRate
+          sampleRate: 24000 // Always use 24kHz for Gemini playback
         });
-        console.log('🎵 Created dedicated playback AudioContext at', sampleRate, 'Hz');
+        console.log('🎵 Created dedicated 24kHz playback AudioContext');
+        
+        // Initialize next play time
+        nextPlayTimeRef.current = playbackAudioContextRef.current.currentTime;
+        
+        // Create output analyzer for the playback context
+        if (!outputAnalyzerRef.current) {
+          outputAnalyzerRef.current = new AudioAnalyzer(playbackAudioContextRef.current);
+        }
       }
       
-      // Decode audio using the dedicated playback context
+      // Decode audio using the dedicated 24kHz playback context
       const audioBuffer = await customDecodeAudioData(
         base64AudioData,
         playbackAudioContextRef.current,
-        sampleRate,
-        1 // Assuming mono audio from Gemini
+        24000, // Force 24kHz for consistent playback
+        1 // Mono audio from Gemini
       );
       
-      const source = playbackAudioContextRef.current.createBufferSource();
-      source.buffer = audioBuffer;
-
-      // Connect directly to destination (no cross-context analyzer for now)
-      source.connect(playbackAudioContextRef.current.destination);
+      // Priority 2: Add to queue for sequential playback
+      audioQueueRef.current.push(audioBuffer);
+      console.log('📥 Added audio chunk to queue, total chunks:', audioQueueRef.current.length);
       
       // Ensure the playback context is resumed
       if (playbackAudioContextRef.current.state === 'suspended') {
         await playbackAudioContextRef.current.resume();
       }
       
-      source.start();
-      console.log('✅ Audio response playback started successfully with dedicated', sampleRate, 'Hz context');
+      // Start playing if not already playing
+      playNextInQueue();
 
     } catch (error) {
-      console.error("Error playing audio response:", error);
+      console.error("Error queuing audio response:", error);
       setError(`Playback error: ${error instanceof Error ? error.message : String(error)}`);
     }
-  }, []);
+  }, [playNextInQueue]);
 
   // Start recording function
   const handleStartRecording = useCallback(async () => {

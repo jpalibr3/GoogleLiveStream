@@ -1,0 +1,30 @@
+Okay, AI agent, your analysis is spot on. The "fast, crackly, and distorted" audio is almost certainly due to the combination of a sample rate mismatch for playback and the simultaneous playing of rapidly arriving audio chunks.
+
+Please proceed with the following two-priority plan, focusing your changes on client/src/pages/live-audio.tsx:
+
+Priority 1: Correct the Playback Sample Rate (Addresses User's "fast" audio symptom and your Option B)
+
+Action: Modify client/src/pages/live-audio.tsx.
+Currently, the audioContextRef.current used in playAudioResponse is initialized with a 16kHz sample rate (intended for audio input) within the handleStartRecording function. This is a critical issue.
+You need to create and manage a separate AudioContext instance specifically for audio playback. This new playback AudioContext must be initialized with a 24kHz sample rate, as per the Gemini Live API output specification (source [268]).
+Ensure that the playAudioResponse function uses this new 24kHz playback AudioContext when calling customDecodeAudioData and when creating AudioBufferSourceNode.
+Priority 2: Implement Sequential Audio Chunk Playback (Addresses User's "crackling" and "distorted" audio symptoms and your Option A)
+
+Action: Modify client/src/pages/live-audio.tsx.
+The current implementation in playAudioResponse plays each audio chunk immediately as it's decoded by calling source.start() without proper sequencing.
+Implement an audio playback queue. When onAudioReceived provides a new base64 audio chunk:
+Decode it into an AudioBuffer using the 24kHz playback AudioContext.
+Add this AudioBuffer to a queue (e.g., a simple array).
+Manage a nextPlayTime variable (initialized to playbackAudioContext.currentTime).
+Create a playback handler function. This function should:
+Check if the queue is not empty and if playbackAudioContext.currentTime >= nextPlayTime.
+If both conditions are true, dequeue an AudioBuffer.
+Create an AudioBufferSourceNode with this buffer.
+Connect the source to the playback AudioContext's destination (and the outputAnalyzerRef if it exists).
+Schedule it to play using source.start(nextPlayTime). If nextPlayTime is in the past (due to processing lag), you might adjust to start at playbackAudioContext.currentTime to avoid initial silence, but ensure nextPlayTime is correctly updated for the next chunk.
+Update nextPlayTime += buffer.duration.
+Attach an onended event to the AudioBufferSourceNode to call the playback handler function again, attempting to play the next chunk in the queue.
+The logic in the previously provided index.tsx.txt (source [665, 668]) for managing nextStartTime and scheduling sources is a good reference for this.
+By addressing the sample rate for playback first and then ensuring chunks play sequentially, we should achieve clear, correctly-paced audio.
+
+Please proceed with these modifications to client/src/pages/live-audio.tsx.
