@@ -122,30 +122,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
             break;
 
           case 'audio':
-            if (geminiWs && geminiWs.readyState === WebSocket.OPEN && message.data) {
-              // Forward audio data to Gemini
-              const geminiMessage = {
-                realtimeInput: {
-                  audio: message.data
-                }
-              };
-              geminiWs.send(JSON.stringify(geminiMessage));
+            if (liveSession && message.data) {
+              try {
+                // Forward audio data to Live API session
+                await liveSession.send({
+                  data: message.data,
+                  mimeType: "audio/pcm"
+                });
+              } catch (error) {
+                console.error('Error sending audio to Live API:', error);
+                ws.send(JSON.stringify({
+                  type: 'error',
+                  error: `Failed to send audio: ${error}`
+                }));
+              }
             }
             break;
 
           case 'text':
-            if (geminiWs && geminiWs.readyState === WebSocket.OPEN && message.text) {
-              // Forward text to Gemini
-              const geminiMessage = {
-                clientContent: {
-                  turns: [{
-                    role: "user",
-                    parts: [{ text: message.text }]
-                  }],
-                  turnComplete: true
-                }
-              };
-              geminiWs.send(JSON.stringify(geminiMessage));
+            if (liveSession && message.text) {
+              try {
+                // Forward text to Live API session
+                await liveSession.send(message.text);
+              } catch (error) {
+                console.error('Error sending text to Live API:', error);
+                ws.send(JSON.stringify({
+                  type: 'error',
+                  error: `Failed to send text: ${error}`
+                }));
+              }
             }
             break;
 
@@ -163,15 +168,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     ws.on('close', () => {
       console.log('Client disconnected from WebSocket');
-      if (geminiWs) {
-        geminiWs.close();
+      if (liveSession) {
+        liveSession.close?.();
       }
     });
 
     ws.on('error', (error) => {
       console.error('WebSocket error:', error);
-      if (geminiWs) {
-        geminiWs.close();
+      if (liveSession) {
+        liveSession.close?.();
       }
     });
   });
