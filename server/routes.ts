@@ -103,11 +103,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 speechConfig: {
                   voiceConfig: {
                     prebuiltVoiceConfig: {
-                      voiceName: "Zephyr"
+                      voiceName: "Puck"
                     }
                   }
                 },
-                mediaResolution: "MEDIA_RESOLUTION_MEDIUM",
+                systemInstruction: {
+                  parts: [{
+                    text: "You are a helpful AI assistant. Please respond with voice to the user's audio input. Keep your responses conversational and engaging."
+                  }]
+                },
+                generationConfig: {
+                  candidateCount: 1,
+                  maxOutputTokens: 1000,
+                  temperature: 0.7,
+                },
                 ...message.config?.generationConfig
               };
 
@@ -125,6 +134,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                     if (message.serverContent?.modelTurn?.parts) {
                       console.log('📝 Processing model turn with parts:', message.serverContent.modelTurn.parts.length);
                       for (const part of message.serverContent.modelTurn.parts) {
+                        console.log('🔍 Part structure:', JSON.stringify(part, null, 2));
                         if (part.inlineData?.mimeType?.startsWith('audio/')) {
                           console.log('🔊 Sending audio response to client, mimeType:', part.inlineData.mimeType);
                           ws.send(JSON.stringify({
@@ -138,10 +148,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
                             type: 'text',
                             text: part.text
                           }));
+                        } else {
+                          console.log('❓ Unknown part type:', Object.keys(part));
                         }
                       }
+                    } else if (message.toolCall) {
+                      console.log('🔧 Tool call received:', message.toolCall);
+                    } else if (message.setupComplete) {
+                      console.log('✅ Setup complete received');
                     } else {
-                      console.log('ℹ️ Message received but no model turn parts found');
+                      console.log('ℹ️ Other message type received:', Object.keys(message));
                     }
                   },
                   onData: (data: any) => {
