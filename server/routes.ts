@@ -12,51 +12,7 @@ interface GeminiLiveMessage {
   text?: string;
 }
 
-// Helper function to start listening for Live API responses
-async function startLiveSessionListening(liveSession: any, ws: WebSocket) {
-  if (!liveSession) {
-    console.error('Live session is null');
-    ws.send(JSON.stringify({
-      type: 'error',
-      error: 'Live session initialization failed'
-    }));
-    return;
-  }
-
-  try {
-    console.log('Starting live session listening...');
-    for await (const response of liveSession.receive()) {
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
-        console.log('WebSocket closed, stopping live session');
-        break;
-      }
-
-      if (response.data) {
-        console.log('Received audio data from Gemini');
-        ws.send(JSON.stringify({
-          type: 'audio',
-          data: response.data
-        }));
-      }
-      
-      if (response.text) {
-        console.log('Received text from Gemini:', response.text);
-        ws.send(JSON.stringify({
-          type: 'text',
-          text: response.text
-        }));
-      }
-    }
-  } catch (error) {
-    console.error('Live session error:', error);
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({
-        type: 'error',
-        error: `Live session error: ${error.message || 'Unknown error'}`
-      }));
-    }
-  }
-}
+// JavaScript SDK uses callbacks instead of receive() - removed old function
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
@@ -157,11 +113,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
               console.log('Attempting to connect to Gemini Live API...');
               
-              // Add required callbacks parameter based on TypeScript error
+              // Add required callbacks parameter with onmessage
               const connectParams = {
                 model: modelName,
                 config,
                 callbacks: {
+                  onmessage: (message: any) => {
+                    console.log('Live API message received:', message);
+                    
+                    // Handle different message types
+                    if (message.serverContent?.modelTurn?.parts) {
+                      for (const part of message.serverContent.modelTurn.parts) {
+                        if (part.inlineData?.mimeType?.startsWith('audio/')) {
+                          ws.send(JSON.stringify({
+                            type: 'audio',
+                            data: part.inlineData.data,
+                            mimeType: part.inlineData.mimeType
+                          }));
+                        } else if (part.text) {
+                          ws.send(JSON.stringify({
+                            type: 'text',
+                            text: part.text
+                          }));
+                        }
+                      }
+                    }
+                  },
                   onData: (data: any) => {
                     console.log('Live API data received:', data);
                     ws.send(JSON.stringify({ type: 'audio', data: data }));
@@ -189,8 +166,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               console.log('Has receive method:', 'receive' in liveSession);
               console.log('Receive method type:', typeof liveSession.receive);
               
-              // Start listening for responses in background
-              startLiveSessionListening(liveSession, ws);
+              // Callbacks handle responses automatically - no need for manual listening
               
               // Notify client of successful connection
               ws.send(JSON.stringify({
@@ -211,10 +187,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           case 'audio':
             if (liveSession && message.data) {
               try {
-                // Forward audio data to Live API session
-                await liveSession.send({
-                  data: message.data,
-                  mimeType: "audio/pcm"
+                // Use sendRealtimeInput for audio data
+                await liveSession.sendRealtimeInput({
+                  mediaChunks: [{
+                    mimeType: 'audio/pcm',
+                    data: message.data
+                  }]
                 });
               } catch (error) {
                 console.error('Error sending audio to Live API:', error);
@@ -229,8 +207,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           case 'text':
             if (liveSession && message.text) {
               try {
-                // Forward text to Live API session
-                await liveSession.send(message.text);
+                // Use sendClientContent for text
+                await liveSession.sendClientContent({
+                  turns: [{
+                    role: 'user',
+                    parts: [{
+                      text: message.text
+                    }]
+                  }]
+                });
               } catch (error) {
                 console.error('Error sending text to Live API:', error);
                 ws.send(JSON.stringify({
