@@ -10,6 +10,7 @@ interface GeminiLiveMessage {
   config?: any;
   data?: any;
   text?: string;
+  mimeType?: string;
 }
 
 // JavaScript SDK uses callbacks instead of receive() - removed old function
@@ -181,9 +182,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
                       message: 'Live API connection established successfully'
                     }));
                   },
-                  onmessage: function (message: LiveServerMessage) {
-                    console.log('🔔 SUCCESS: Message received from Live API:', JSON.stringify(message, null, 2));
-                    responseQueue.push(message);
+                  onmessage: function (responseMessage: LiveServerMessage) {
+                    console.log('🔔 Message received from Live API:', JSON.stringify(responseMessage, null, 2));
+                    
+                    // Directly process and forward responses to client
+                    if (responseMessage.serverContent?.modelTurn?.parts) {
+                      const part = responseMessage.serverContent.modelTurn.parts[0];
+                      
+                      if (part.inlineData?.data && part.inlineData.mimeType) {
+                        console.log('🔊 Audio data received from Gemini, forwarding to client');
+                        ws.send(JSON.stringify({
+                          type: 'audio',
+                          data: part.inlineData.data, // This is base64
+                          mimeType: part.inlineData.mimeType
+                        }));
+                      }
+                      
+                      if (part.text) {
+                        console.log('💬 Text received from Gemini, forwarding to client:', part.text);
+                        ws.send(JSON.stringify({
+                          type: 'text',
+                          text: part.text
+                        }));
+                      }
+                    }
+                    
+                    if (responseMessage.serverContent?.interrupted) {
+                      console.log('🛑 Generation interrupted by Gemini.');
+                      ws.send(JSON.stringify({ type: 'interrupted' }));
+                    }
                   },
                   onerror: function (e: ErrorEvent) {
                     console.error('❌ LIVE API ERROR DETAILS:');
@@ -250,43 +277,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
             break;
 
           case 'audio':
-            if (liveSession && message.data) {
+            if (liveSession && message.data && typeof message.data === 'string' && message.mimeType) {
               try {
-                console.log('📤 Received audio data from client, length:', Array.isArray(message.data) ? message.data.length : 'not array');
-                console.log('📤 Audio data type:', typeof message.data);
+                console.log(`📤 Relaying audio to Live API: mimeType=${message.mimeType}, data length=${message.data.length}`);
                 
-                // Convert array to base64 for Live API
-                let audioData: string;
-                if (Array.isArray(message.data)) {
-                  // Convert Float32Array back to base64, ensuring finite values
-                  const float32Array = new Float32Array(message.data);
-                  const buffer = new ArrayBuffer(float32Array.length * 4);
-                  const view = new DataView(buffer);
-                  for (let i = 0; i < float32Array.length; i++) {
-                    const value = Number.isFinite(float32Array[i]) ? float32Array[i] : 0;
-                    view.setFloat32(i * 4, value, true);
+                // Use correct SDK structure for sendRealtimeInput
+                await liveSession.sendRealtimeInput({
+                  audio: { 
+                    data: message.data, 
+                    mimeType: message.mimeType 
                   }
-                  audioData = Buffer.from(buffer).toString('base64');
-                } else {
-                  audioData = String(message.data);
-                }
+                });
                 
-                console.log('📤 Converted audio data, length:', typeof audioData === 'string' ? audioData.length : 'not string');
-                console.log('📤 Audio data sample:', typeof audioData === 'string' ? audioData.substring(0, 100) : 'Array data');
-                
-                // Send audio using working method (revert to previous approach)
-                await liveSession.sendRealtimeInput(audioData, "audio/pcm;rate=16000");
-                
-                console.log('✅ Audio data sent successfully to Live API');
+                console.log('✅ Audio data relayed successfully to Live API');
               } catch (error) {
                 console.error('❌ Error sending audio to Live API:', error);
-                ws.send(JSON.stringify({
-                  type: 'error',
-                  error: `Failed to send audio: ${error}`
+                ws.send(JSON.stringify({ 
+                  type: 'error', 
+                  error: `Failed to send audio: ${error instanceof Error ? error.message : String(error)}` 
                 }));
               }
             } else {
-              console.log('⚠️ No liveSession or audio data to send');
+              console.warn('⚠️ No liveSession or invalid audio message from client', message);
+              ws.send(JSON.stringify({ 
+                type: 'error', 
+                error: 'Invalid audio message format from client' 
+              }));
             }
             break;
 

@@ -19,7 +19,7 @@ export class GeminiLiveClient {
   
   // Event handlers
   public onConnectionStateChange?: (state: ConnectionState) => void;
-  public onAudioReceived?: (audioData: Uint8Array) => void;
+  public onAudioReceived?: (base64AudioData: string, mimeType?: string) => void;
   public onTextReceived?: (text: string) => void;
   public onError?: (error: string) => void;
 
@@ -249,12 +249,14 @@ export class GeminiLiveClient {
 
     try {
       console.log('🎤 GeminiLiveClient sending audio data, length:', audioData.length);
-      // Send audio data to server
+      
+      // Use createAudioBlob to properly encode audio data
+      const audioBlob = createAudioBlob(audioData);
       const message = {
         type: 'audio',
-        data: Array.from(audioData) // Convert Float32Array to regular array for JSON
+        data: audioBlob.data, // Send base64 string
+        mimeType: audioBlob.mimeType // Send mimeType
       };
-      console.log('🎤 Audio data converted to array, length:', message.data.length);
       
       this.websocket.send(JSON.stringify(message));
       console.log('✅ Audio data sent to WebSocket successfully');
