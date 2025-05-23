@@ -56,7 +56,7 @@ export class GeminiLiveClient {
         // Send initial setup configuration
         const setupMessage = {
           setup: {
-            model: config?.model || "models/gemini-2.0-flash-live-001",
+            model: config?.model || "models/gemini-2.5-flash-preview-native-audio-dialog",
             generationConfig: {
               responseModalities: ["AUDIO"],
               speechConfig: {
