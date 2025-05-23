@@ -14,10 +14,25 @@ interface GeminiLiveMessage {
 
 // Helper function to start listening for Live API responses
 async function startLiveSessionListening(liveSession: any, ws: WebSocket) {
+  if (!liveSession) {
+    console.error('Live session is null');
+    ws.send(JSON.stringify({
+      type: 'error',
+      error: 'Live session initialization failed'
+    }));
+    return;
+  }
+
   try {
+    console.log('Starting live session listening...');
     for await (const response of liveSession.receive()) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        console.log('WebSocket closed, stopping live session');
+        break;
+      }
+
       if (response.data) {
-        // Forward audio data to client
+        console.log('Received audio data from Gemini');
         ws.send(JSON.stringify({
           type: 'audio',
           data: response.data
@@ -25,7 +40,7 @@ async function startLiveSessionListening(liveSession: any, ws: WebSocket) {
       }
       
       if (response.text) {
-        // Forward text response to client
+        console.log('Received text from Gemini:', response.text);
         ws.send(JSON.stringify({
           type: 'text',
           text: response.text
@@ -34,10 +49,12 @@ async function startLiveSessionListening(liveSession: any, ws: WebSocket) {
     }
   } catch (error) {
     console.error('Live session error:', error);
-    ws.send(JSON.stringify({
-      type: 'error',
-      error: `Live session error: ${error}`
-    }));
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        type: 'error',
+        error: `Live session error: ${error.message || 'Unknown error'}`
+      }));
+    }
   }
 }
 
@@ -115,9 +132,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
             // Initialize Google GenAI client and Live API on server
             try {
+              if (!apiKey) {
+                throw new Error('API key is missing or invalid');
+              }
+
+              console.log('Initializing GenAI with provided API key...');
               genAI = new GoogleGenAI({ apiKey });
               
-              const modelName = message.config?.model || "models/gemini-2.5-flash-preview-native-audio-dialog";
+              const modelName = message.config?.model || "gemini-2.5-flash-preview-native-audio-dialog";
+              console.log('Using model:', modelName);
+              
               const config = {
                 responseModalities: ["AUDIO"],
                 speechConfig: {
@@ -131,6 +155,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 ...message.config?.generationConfig
               };
 
+              console.log('Attempting to connect to Gemini Live API...');
               // Connect using the server-side Live API
               liveSession = await genAI.live.connect({ model: modelName, config });
               
