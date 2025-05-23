@@ -147,9 +147,15 @@ export default function LiveAudio() {
       // Start sending audio data
       const processor = audioContext.createScriptProcessor(4096, 1, 1);
       processor.onaudioprocess = (event) => {
-        if (isRecording && geminiClientRef.current?.isConnected()) {
+        console.log('🎤 Audio process callback triggered, isRecording:', isRecording);
+        console.log('🎤 Gemini client connected:', geminiClientRef.current?.isConnected());
+        
+        if (isRecording && geminiClientRef.current) {
           const inputData = event.inputBuffer.getChannelData(0);
+          console.log('🎤 Sending audio data from processor, length:', inputData.length);
           geminiClientRef.current.sendAudio(inputData);
+        } else {
+          console.log('⚠️ Not sending audio - isRecording:', isRecording, 'client exists:', !!geminiClientRef.current);
         }
       };
       
