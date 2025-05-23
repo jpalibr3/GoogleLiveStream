@@ -274,8 +274,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 console.log('📤 Converted audio data, length:', typeof audioData === 'string' ? audioData.length : 'not string');
                 console.log('📤 Audio data sample:', typeof audioData === 'string' ? audioData.substring(0, 100) : 'Array data');
                 
-                // Send audio using sendRealtimeInput with proper format
-                await liveSession.sendRealtimeInput(audioData, "audio/pcm;rate=16000");
+                // Send audio using the correct Live API method
+                await liveSession.sendRealtimeInput({
+                  mediaChunks: [{
+                    data: audioData,
+                    mimeType: "audio/pcm;rate=16000"
+                  }]
+                });
                 
                 console.log('✅ Audio data sent successfully to Live API');
               } catch (error) {

@@ -5,6 +5,7 @@ import { ControlPanel } from "@/components/control-panel";
 import { StatusOverlay } from "@/components/status-overlay";
 import { AudioAnalyzer } from "@/lib/audio-analyzer";
 import { GeminiLiveClient, ConnectionState } from "@/lib/gemini-live";
+import { VoiceActivityDetector } from "@/lib/voice-activity-detector";
 import { useToast } from "@/hooks/use-toast";
 
 interface ParticleProps {
@@ -31,6 +32,8 @@ export default function LiveAudio() {
   const inputAnalyzerRef = useRef<AudioAnalyzer | null>(null);
   const outputAnalyzerRef = useRef<AudioAnalyzer | null>(null);
   const geminiClientRef = useRef<GeminiLiveClient | null>(null);
+  const voiceDetectorRef = useRef<VoiceActivityDetector | null>(null);
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
   
   // Generate floating particles
   const [particles] = useState<ParticleProps[]>(() => {
