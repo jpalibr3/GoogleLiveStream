@@ -1,0 +1,21 @@
+Okay, it's good we confirmed the new code with audioStreamEnd: true is definitely running now, even if the "invalid argument" error persists right after both STEP 1 and STEP 2 complete successfully. This is a very telling clue!
+
+Your AI's observation about generationComplete: true coming from Gemini is also important. It suggests Gemini is finishing its thought and trying to signal that.
+
+Here's my take on the AI's question ("Should I try removing the endTurn call completely...?"):
+
+"This is excellent debugging – knowing that both audioStreamEnd: true (STEP 1) and the subsequent sendClientContent({ turnComplete: true }) (STEP 2) are being sent successfully, yet the error still occurs immediately after, is a huge pointer.
+
+You're right, if Gemini is already sending generationComplete: true, our explicit turn completion signals (audioStreamEnd and turnComplete) might indeed be redundant or even conflicting with the API's natural flow after it has finished speaking and signaled generationComplete.
+
+Given this new information:
+
+Let's try removing the server-side explicit turn completion signals as a test.
+Specifically, when the client signals it has stopped recording (your case 'endTurn': on the server), let's comment out both the liveSession.sendRealtimeInput({ audioStreamEnd: true }); (STEP 1) AND the liveSession.sendClientContent({ turns: [...], turnComplete: true }); (STEP 2) calls.
+The idea is to see if, after the client stops sending audio, Gemini's VAD and its own generationComplete: true flag are sufficient for it to finalize its response and keep the session gracefully open for the next interaction, without our server sending any explicit end-of-turn or end-of-stream messages.
+
+Regarding a different API method: Let's hold on that. This test of removing our explicit signals is simpler and will tell us if the API prefers to manage the end-of-speech/turn on its own in this streaming audio context, especially since we're using automatic VAD.
+
+So, to confirm, my preference is your first suggestion: Let's try removing our explicit endTurn (and audioStreamEnd) calls from the server-side logic entirely for this next test. If Gemini can naturally handle the conversation flow once the client stops sending audio, that would be the cleanest solution. If that doesn't work, we can then re-evaluate.
+
+I'm very hopeful this will be the key, especially since Gemini itself is signaling generationComplete!"

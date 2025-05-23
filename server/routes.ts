@@ -330,39 +330,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
             break;
 
           case 'endTurn':
-            console.log('🚨 DEBUG: endTurn case triggered - NEW CODE VERSION');
-            if (liveSession) {
-              try {
-                console.log('🔚 STEP 1: Signaling audio stream end to Live API');
-                
-                // First, explicitly signal that the audio stream has ended
-                await liveSession.sendRealtimeInput({ audioStreamEnd: true });
-                console.log('✅ STEP 1 COMPLETE: Audio stream end signal sent successfully');
-                
-                console.log('🔚 STEP 2: Now signaling turn completion to Live API');
-                
-                // Then signal turn completion
-                await liveSession.sendClientContent({
-                  turns: [
-                    {
-                      role: "user",
-                      parts: [] // Empty parts for turn completion signal
-                    }
-                  ],
-                  turnComplete: true
-                });
-                
-                console.log('✅ STEP 2 COMPLETE: Turn completion signal sent successfully');
-              } catch (error) {
-                console.error('❌ ERROR in endTurn sequence:', error);
-                ws.send(JSON.stringify({
-                  type: 'error',
-                  error: `Failed to send end of turn: ${error instanceof Error ? error.message : String(error)}`
-                }));
-              }
-            } else {
-              console.log('⚠️ No liveSession available for endTurn');
-            }
+            console.log('🚨 DEBUG: endTurn case triggered - TESTING NO EXPLICIT SIGNALS');
+            console.log('🔇 Letting Gemini handle turn completion naturally (no explicit signals sent)');
+            // REMOVED: All explicit turn completion signals to test if Gemini's natural VAD 
+            // and generationComplete handling works better without our interference
             break;
 
           default:
